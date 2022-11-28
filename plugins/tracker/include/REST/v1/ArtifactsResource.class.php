@@ -20,7 +20,6 @@
 
 namespace Tuleap\Tracker\REST\v1;
 
-use Codendi_HTMLPurifier;
 use EventManager;
 use FeedbackDao;
 use Luracast\Restler\RestException;
@@ -753,7 +752,6 @@ class ArtifactsResource extends AuthenticatedResource
                 new ChangesetCommentIndexer(
                     new ItemToIndexQueueEventBased($event_dispatcher),
                     $event_dispatcher,
-                    Codendi_HTMLPurifier::instance(),
                     new \Tracker_Artifact_Changeset_CommentDao(),
                 ),
             )
@@ -1217,7 +1215,11 @@ class ArtifactsResource extends AuthenticatedResource
         $contributor_semantic_checker = new MoveContributorSemanticChecker($this->formelement_factory);
 
         return new MoveArtifact(
-            $this->artifacts_deletion_manager,
+            new ArtifactsDeletionManager(
+                new ArtifactsDeletionDAO(),
+                ArtifactDeletorBuilder::buildForcedSynchronousDeletor(),
+                new ArtifactDeletionLimitRetriever($this->artifacts_deletion_config, $this->user_deletion_retriever),
+            ),
             $builder->build($children_collector, $file_path_xml_exporter, $user, $user_xml_exporter, true),
             new MoveChangesetXMLUpdater(
                 $this->event_manager,

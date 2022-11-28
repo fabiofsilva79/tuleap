@@ -40,7 +40,6 @@ import { NewLinkCollectionPresenter } from "./NewLinkCollectionPresenter";
 import { getNewLinkTemplate } from "./NewLinkTemplate";
 import { CollectionOfAllowedLinksTypesPresenters } from "./CollectionOfAllowedLinksTypesPresenters";
 import type { LinkedArtifactPopoverElement } from "./LinkedArtifactsPopoversController";
-import { PossibleParentsGroup } from "./PossibleParentsGroup";
 
 export interface LinkField {
     readonly content: () => HTMLElement;
@@ -145,22 +144,21 @@ export const setAllowedTypes = (
     return presenter;
 };
 
-export const setCurrentLinkType = (host: LinkField, link_type: LinkType | undefined): LinkType => {
-    if (!link_type) {
-        return LinkType.buildUntyped();
-    }
-
-    if (!LinkType.isReverseChild(link_type)) {
-        host.link_selector.setPlaceholder(getLinkSelectorPlaceholderText());
-        host.dropdown_content = [];
+export const current_link_type_descriptor = {
+    set: (host: LinkField, link_type: LinkType | undefined): LinkType => {
+        if (!link_type) {
+            return LinkType.buildUntyped();
+        }
+        if (!LinkType.isReverseChild(link_type)) {
+            host.link_selector.setPlaceholder(getLinkSelectorPlaceholderText());
+            return link_type;
+        }
+        host.link_selector.setPlaceholder(getParentLinkSelectorPlaceholderText());
         return link_type;
-    }
-    host.link_selector.setPlaceholder(getParentLinkSelectorPlaceholderText());
-    host.dropdown_content = [PossibleParentsGroup.buildLoadingState()];
-    host.controller.retrievePossibleParentsGroups().then((groups) => {
-        host.dropdown_content = groups;
-    });
-    return link_type;
+    },
+    observe: (host: LinkField): void => {
+        host.controller.autoComplete(host, "");
+    },
 };
 
 const setDropdownContent = (host: LinkField, groups: GroupCollection): GroupCollection => {
@@ -254,10 +252,8 @@ export const LinkField = define<LinkField>({
 
             controller.retrievePossibleParentsGroups().then((groups) => {
                 host.current_link_type = controller.getCurrentLinkType(groups.length > 0);
-                host.dropdown_content = groups;
                 host.allowed_link_types = controller.displayAllowedTypes();
             });
-
             return controller;
         },
     },
@@ -274,9 +270,7 @@ export const LinkField = define<LinkField>({
     new_links_presenter: {
         set: setNewLinks,
     },
-    current_link_type: {
-        set: setCurrentLinkType,
-    },
+    current_link_type: current_link_type_descriptor,
     dropdown_content: {
         set: setDropdownContent,
     },

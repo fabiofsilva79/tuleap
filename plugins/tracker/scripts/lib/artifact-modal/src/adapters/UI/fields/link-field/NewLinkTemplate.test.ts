@@ -128,6 +128,7 @@ describe(`NewLinkTemplate`, () => {
                     reverse_label: "Parent",
                 },
             ];
+            const is_search_feature_flag_enabled = true;
 
             const controller = LinkFieldController(
                 RetrieveAllLinkedArtifactsStub.withoutLink(),
@@ -146,7 +147,8 @@ describe(`NewLinkTemplate`, () => {
                     parents_retriever,
                     link_verifier,
                     current_artifact_identifier,
-                    current_tracker_identifier
+                    current_tracker_identifier,
+                    is_search_feature_flag_enabled
                 ),
                 AddNewLinkStub.withCount(),
                 DeleteNewLinkStub.withCount(),
