@@ -11,12 +11,12 @@ export BASEDIR
 pushd "$BASEDIR"
 
 case "${1:-}" in
-    "80")
-    export PHP_VERSION="php80"
+    "81")
+    export PHP_VERSION="php81"
     ;;
     *)
     echo "A PHP version must be provided as parameter. Allowed values are:"
-    echo "* 80"
+    echo "* 81"
     exit 1
 esac
 
@@ -44,7 +44,7 @@ DOCKERCOMPOSE="docker-compose --project-name $project_name -f tests/rest/docker-
 
 function cleanup {
     if [ -n "${TESTS_RESULT:-}" ]; then
-        docker cp "$($DOCKERCOMPOSE ps -q tests)":/output/. "$TESTS_RESULT" || echo "Failed to copy tests result"
+        $DOCKERCOMPOSE cp tests:/output/. "$TESTS_RESULT" || echo "Failed to copy tests result"
     fi
     $DOCKERCOMPOSE down
 }

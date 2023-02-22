@@ -17,8 +17,9 @@
  * along with Tuleap. If not, see <http://www.gnu.org/licenses/>.
  */
 
-@use "includes/header";
-@use "includes/campaign";
-@use "includes/backlog-item";
-@use "includes/test-definitions";
-@use "includes/project-header-background";
+@use "@tuleap/tlp-dropdown";
+@use "./includes/header";
+@use "./includes/campaign";
+@use "./includes/backlog-item";
+@use "./includes/test-definitions";
+@use "./includes/project-header-background";

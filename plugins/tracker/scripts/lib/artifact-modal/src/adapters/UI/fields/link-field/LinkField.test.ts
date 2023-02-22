@@ -20,11 +20,12 @@
 import { setCatalog } from "../../../../gettext-catalog";
 import type { HostElement, LinkField } from "./LinkField";
 import {
+    current_link_type_descriptor,
+    dropdown_section_descriptor,
     getEmptyStateIfNeeded,
     getLinkFieldCanOnlyHaveOneParentNote,
     getSkeletonIfNeeded,
     setAllowedTypes,
-    current_link_type_descriptor,
     setLinkedArtifacts,
     setNewLinks,
 } from "./LinkField";
@@ -36,18 +37,21 @@ import { LinkedArtifactPresenter } from "./LinkedArtifactPresenter";
 import { LinkedArtifactStub } from "../../../../../tests/stubs/LinkedArtifactStub";
 import type { NewLink } from "../../../../domain/fields/link-field/NewLink";
 import { NewLinkStub } from "../../../../../tests/stubs/NewLinkStub";
-import type { LinkType } from "../../../../domain/fields/link-field/LinkType";
+import { LinkType } from "../../../../domain/fields/link-field/LinkType";
 import { LinkSelectorStub } from "../../../../../tests/stubs/LinkSelectorStub";
-import type { LinkSelector, GroupCollection } from "@tuleap/link-selector";
-import { UNTYPED_LINK } from "@tuleap/plugin-tracker-constants";
+import type { GroupCollection, LinkSelector } from "@tuleap/link-selector";
+import { IS_CHILD_LINK_TYPE, UNTYPED_LINK } from "@tuleap/plugin-tracker-constants";
 import { LinkTypeStub } from "../../../../../tests/stubs/LinkTypeStub";
 import { CollectionOfAllowedLinksTypesPresenters } from "./CollectionOfAllowedLinksTypesPresenters";
-import { IS_CHILD_LINK_TYPE } from "@tuleap/plugin-tracker-constants";
 import { VerifyHasParentLinkStub } from "../../../../../tests/stubs/VerifyHasParentLinkStub";
 import type { LinkFieldControllerType } from "./LinkFieldController";
 import type { ArtifactCrossReference } from "../../../../domain/ArtifactCrossReference";
 import { selectOrThrow } from "@tuleap/dom";
 import { AllowedLinksTypesCollection } from "./AllowedLinksTypesCollection";
+import { MatchingArtifactsGroup } from "./dropdown/MatchingArtifactsGroup";
+import { RecentlyViewedArtifactGroup } from "./dropdown/RecentlyViewedArtifactGroup";
+import { PossibleParentsGroup } from "./dropdown/PossibleParentsGroup";
+import { SearchResultsGroup } from "./dropdown/SearchResultsGroup";
 
 describe("LinkField", () => {
     beforeEach(() => {
@@ -160,9 +164,8 @@ describe("LinkField", () => {
     });
 
     describe(`setters`, () => {
-        describe(`current_link_type_descriptor`, () => {
+        describe("dropdown_section_descriptor", () => {
             let link_selector: LinkSelectorStub, host: LinkField;
-
             beforeEach(() => {
                 link_selector = LinkSelectorStub.build();
 
@@ -175,7 +178,46 @@ describe("LinkField", () => {
                     } as unknown as LinkFieldControllerType,
                     link_selector: link_selector as LinkSelector,
                     current_link_type: LinkTypeStub.buildUntyped(),
-                    dropdown_content: initial_dropdown_content,
+                    matching_artifact_section: initial_dropdown_content,
+                    possible_parents_section: initial_dropdown_content,
+                    recently_viewed_section: initial_dropdown_content,
+                    search_results_section: initial_dropdown_content,
+                } as LinkField;
+            });
+
+            it(`defaults property value to empty array`, () => {
+                expect(dropdown_section_descriptor.set(host, undefined)).toStrictEqual([]);
+            });
+
+            it(`sets the link selector dropdown with the sections in the expected order when a section changes`, () => {
+                const setDropdown = jest.spyOn(link_selector, "setDropdownContent");
+                host.matching_artifact_section = [MatchingArtifactsGroup.buildEmpty()];
+                host.recently_viewed_section = [RecentlyViewedArtifactGroup.buildEmpty()];
+                host.search_results_section = [SearchResultsGroup.buildEmpty()];
+                host.possible_parents_section = [PossibleParentsGroup.buildEmpty()];
+
+                dropdown_section_descriptor.observe(host);
+
+                expect(setDropdown).toHaveBeenCalledWith([
+                    ...host.matching_artifact_section,
+                    ...host.recently_viewed_section,
+                    ...host.search_results_section,
+                    ...host.possible_parents_section,
+                ]);
+            });
+        });
+
+        describe(`current_link_type_descriptor`, () => {
+            let host: LinkField;
+
+            beforeEach(() => {
+                host = {
+                    controller: {
+                        autoComplete(): void {
+                            //Do nothing
+                        },
+                    } as unknown as LinkFieldControllerType,
+                    current_link_type: LinkTypeStub.buildUntyped(),
                 } as LinkField;
             });
 
@@ -185,29 +227,7 @@ describe("LinkField", () => {
 
             it(`defaults to Untyped link`, () => {
                 const link_type = setType(undefined);
-
-                expect(link_type.shortname).toBe(UNTYPED_LINK);
-            });
-
-            it(`when the type is changed to reverse _is_child (Parent),
-                it will set a special placeholder in link selector`, () => {
-                host.current_link_type = LinkTypeStub.buildReverseCustom();
-                const setPlaceholder = jest.spyOn(link_selector, "setPlaceholder");
-
-                const link_type = LinkTypeStub.buildParentLinkType();
-                const result = setType(link_type);
-                expect(result).toBe(link_type);
-                expect(setPlaceholder).toHaveBeenCalled();
-            });
-
-            it(`when the type is changed to another type,
-                it will set the default placeholder in link selector`, () => {
-                const setPlaceholder = jest.spyOn(link_selector, "setPlaceholder");
-
-                const link_type = setType(LinkTypeStub.buildUntyped());
-                const result = setType(link_type);
-                expect(result).toBe(link_type);
-                expect(setPlaceholder).toHaveBeenCalled();
+                expect(LinkType.isUntypedLink(link_type)).toBe(true);
             });
 
             it(`when the current type is changed,

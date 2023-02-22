@@ -20,28 +20,25 @@
 import { disableSpecificErrorThrownByCkeditor } from "../support/disable-specific-error-thrown-by-ckeditor";
 
 describe("Document new UI", () => {
-    const now = Date.now();
+    let now: number;
     context("Project Administrators", function () {
         context("Project administrators", function () {
-            const project_unixname = `docman-${now}`,
-                public_name = `Docman${now}`;
+            let project_unixname: string;
             before(() => {
-                cy.clearSessionCookie();
-
-                cy.projectAdministratorLogin();
-                cy.createNewIssueProject(project_unixname, public_name);
-            });
-
-            beforeEach(() => {
-                cy.preserveSessionCookies();
+                now = Date.now();
+                project_unixname = `docman-${now}`;
+                cy.projectAdministratorSession();
+                cy.createNewPublicProject(project_unixname, "issues");
             });
 
             it("can access to admin section", function () {
+                cy.projectAdministratorSession();
                 cy.visit(`${"/plugins/document/" + project_unixname + "/admin-search"}`);
                 cy.contains("Properties").should("have.attr", "href").as("manage_properties_url");
             });
 
             it("document properties", function () {
+                cy.projectAdministratorSession();
                 cy.visit(this.manage_properties_url);
                 cy.log("Create a custom property");
                 cy.get("[data-test=docman-admin-properties-create-button]").click();
@@ -76,6 +73,7 @@ describe("Document new UI", () => {
             });
 
             it("document versioning", function () {
+                cy.projectAdministratorSession();
                 cy.log("create an embed document");
                 cy.visitProjectService(project_unixname, "Documents");
                 cy.get("[data-test=document-header-actions]").within(() => {
@@ -139,19 +137,18 @@ describe("Document new UI", () => {
 
     context("Project members", function () {
         before(() => {
-            cy.clearSessionCookie();
-            cy.projectMemberLogin();
-            cy.visitProjectService("document-project", "Documents");
-        });
-
-        beforeEach(() => {
-            cy.preserveSessionCookies();
+            cy.projectAdministratorSession();
+            cy.createNewPublicProject(`document-project-${now}`, "issues");
+            cy.visit(`/projects/document-project-${now}`);
+            cy.addProjectMember("projectMember");
         });
 
         context("docman permissions", function () {
             it("should raise an error when user try to access to document admin page", function () {
+                cy.projectMemberSession();
+                cy.visit("/my/");
                 cy.request({
-                    url: "/plugins/document/document-project/admin-search",
+                    url: `/plugins/document/document-project-${now}/admin-search`,
                     failOnStatusCode: false,
                 }).then((response) => {
                     expect(response.status).to.eq(404);
@@ -160,10 +157,6 @@ describe("Document new UI", () => {
         });
 
         context("Item manipulation", () => {
-            before(() => {
-                cy.visitProjectService("document-project", "Documents");
-            });
-
             beforeEach(() => {
                 disableSpecificErrorThrownByCkeditor();
             });
@@ -176,6 +169,8 @@ describe("Document new UI", () => {
             }
 
             it("user can manipulate folders", () => {
+                cy.projectAdministratorSession();
+                cy.visitProjectService(`document-project-${now}`, "Documents");
                 cy.get("[data-test=document-header-actions]").within(() => {
                     cy.get("[data-test=document-item-action-new-button]").click();
 
@@ -206,6 +201,8 @@ describe("Document new UI", () => {
             });
 
             it("user can manipulate empty document", () => {
+                cy.projectAdministratorSession();
+                cy.visitProjectService(`document-project-${now}`, "Documents");
                 cy.get("[data-test=document-header-actions]").within(() => {
                     cy.get("[data-test=document-item-action-new-button]").click();
                     cy.get("[data-test=document-new-empty-creation-button]").click();
@@ -233,6 +230,8 @@ describe("Document new UI", () => {
             });
 
             it("user can manipulate links", () => {
+                cy.projectAdministratorSession();
+                cy.visitProjectService(`document-project-${now}`, "Documents");
                 cy.get("[data-test=document-header-actions]").within(() => {
                     cy.get("[data-test=document-item-action-new-button]").click();
                     cy.get("[data-test=document-new-link-creation-button]").click();
@@ -275,6 +274,8 @@ describe("Document new UI", () => {
             });
 
             it("user should be able to create an embedded file", () => {
+                cy.projectAdministratorSession();
+                cy.visitProjectService(`document-project-${now}`, "Documents");
                 cy.get("[data-test=document-header-actions]").within(() => {
                     cy.get("[data-test=document-item-action-new-button]").click();
                     cy.get("[data-test=document-new-embedded-creation-button]").click();
@@ -309,6 +310,8 @@ describe("Document new UI", () => {
             });
 
             it(`user can download a folder as a zip archive`, () => {
+                cy.projectAdministratorSession();
+                cy.visitProjectService(`document-project-${now}`, "Documents");
                 // Create a folder
                 cy.get("[data-test=document-header-actions]").within(() => {
                     cy.get("[data-test=document-item-action-new-button]").click();
@@ -348,7 +351,7 @@ describe("Document new UI", () => {
                     cy.get("[data-test=document-modal-submit-button-create-item]").click();
                 });
 
-                cy.visitProjectService("document-project", "Documents");
+                cy.visitProjectService(`document-project-${now}`, "Documents");
 
                 cy.get("[data-test=document-tree-content]")
                     .contains("tr", "Folder download")
@@ -362,7 +365,7 @@ describe("Document new UI", () => {
                         if (folder_id === undefined) {
                             throw new Error("Could not retrieve the folder id from its <tr>");
                         }
-                        const download_uri = `/plugins/document/document-project/folders/${encodeURIComponent(
+                        const download_uri = `/plugins/document/document-project-${now}/folders/${encodeURIComponent(
                             folder_id
                         )}/download-folder-as-zip`;
 
@@ -388,12 +391,14 @@ describe("Document new UI", () => {
     });
 
     context("Writers", function () {
+        beforeEach(() => {
+            disableSpecificErrorThrownByCkeditor();
+        });
+
         it("have specifics permissions", function () {
-            cy.clearSessionCookie();
-            cy.projectAdministratorLogin();
+            cy.projectAdministratorSession();
             const project_name = `document-perm-${now}`;
-            const project_public_name = `Document permission${now}`;
-            cy.createNewIssueProject(project_name, project_public_name);
+            cy.createNewPublicProject(project_name, "issues");
             cy.visitProjectService(project_name, "Documents");
 
             const document_name = `Document ${now}`;
@@ -423,8 +428,7 @@ describe("Document new UI", () => {
                     cy.get("[data-test=dropdown-button]").contains("Permissions");
                 });
 
-            cy.clearSessionCookie();
-            cy.projectMemberLogin();
+            cy.projectMemberSession();
             cy.visitProjectService(project_name, "Documents");
             cy.get("[data-test=document-tree-content]")
                 .contains("tr", document_name)

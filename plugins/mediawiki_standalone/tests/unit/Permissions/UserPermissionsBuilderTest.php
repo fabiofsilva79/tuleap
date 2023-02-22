@@ -25,7 +25,7 @@ namespace Tuleap\MediawikiStandalone\Permissions;
 
 use PFUser;
 use Project;
-use Tuleap\Mediawiki\ForgeUserGroupPermission\MediawikiAdminAllProjects;
+use Tuleap\MediawikiStandalone\Permissions\ForgeUserGroupPermission\MediawikiAdminAllProjects;
 use Tuleap\Project\CheckProjectAccess;
 use Tuleap\Test\Builders\ProjectTestBuilder;
 use Tuleap\Test\Builders\UserTestBuilder;
@@ -36,13 +36,21 @@ use User_ForgeUserGroupPermission;
 
 final class UserPermissionsBuilderTest extends TestCase
 {
+    private const READER_UGROUP_ID = 103;
+    private const WRITER_UGROUP_ID = 104;
+    private const ADMIN_UGROUP_ID  = 105;
+
     /**
      * @dataProvider getAdminTestData
      */
-    public function testGetPermissionsForAdmin(PFUser $user, Project $project, bool $is_site_mediawiki_admin, bool $is_admin): void
-    {
-        $forge_permissions_retriever = new class ($is_site_mediawiki_admin) implements ForgePermissionsRetriever
-        {
+    public function testGetPermissionsForAdmin(
+        PFUser $user,
+        Project $project,
+        CheckProjectAccess $check_access,
+        bool $is_site_mediawiki_admin,
+        bool $is_admin,
+    ): void {
+        $forge_permissions_retriever = new class ($is_site_mediawiki_admin) implements ForgePermissionsRetriever {
             public function __construct(private bool $has_permissions)
             {
             }
@@ -52,86 +60,151 @@ final class UserPermissionsBuilderTest extends TestCase
                 if ($permission instanceof MediawikiAdminAllProjects) {
                     return $this->has_permissions;
                 }
+
                 return false;
             }
         };
 
-        $permission_builder = new UserPermissionsBuilder($forge_permissions_retriever, CheckProjectAccessStub::withValidAccess());
+        $dao = ISearchByProjectStub::buildWithoutSpecificPermissions();
+
+        $permission_builder = new UserPermissionsBuilder(
+            $forge_permissions_retriever,
+            $check_access,
+            new ProjectPermissionsRetriever($dao),
+        );
 
         $user_permissions = $permission_builder->getPermissions($user, $project);
 
         self::assertEquals($is_admin, $user_permissions->is_admin);
     }
 
-    public function getAdminTestData(): iterable
+    public static function getAdminTestData(): iterable
     {
         $project = ProjectTestBuilder::aProject()->withId(101)->build();
+
         return [
-            'site administrator has all permissions ' => [
-                'user'        => UserTestBuilder::buildSiteAdministrator(),
-                'project' => $project,
+            'site administrator has all permissions '                => [
+                'user'                    => UserTestBuilder::buildSiteAdministrator(),
+                'project'                 => $project,
+                'check_access'            => CheckProjectAccessStub::withValidAccess(),
                 'is_site_mediawiki_admin' => false,
-                'is_admin' => true,
+                'is_admin'                => true,
             ],
             'site wide mediawiki administrators has all permissions' => [
-                'user' => UserTestBuilder::anActiveUser()->build(),
-                'project' => $project,
+                'user'                    => UserTestBuilder::anActiveUser()->build(),
+                'project'                 => $project,
+                'check_access'            => CheckProjectAccessStub::withValidAccess(),
                 'is_site_mediawiki_admin' => true,
-                'is_admin' => true,
+                'is_admin'                => true,
             ],
-            'project administrator has all permissions' => [
-                'user' => UserTestBuilder::anActiveUser()->withAdministratorOf($project)->build(),
-                'project' => $project,
-                'is_site_mediawiki_admin' => false,
-                'is_admin' => true,
+            'site wide mediawiki administrators has all permissions even on a private project' => [
+                'user'                    => UserTestBuilder::anActiveUser()->build(),
+                'project'                 => $project,
+                'check_access'            => CheckProjectAccessStub::withPrivateProjectWithoutAccess(),
+                'is_site_mediawiki_admin' => true,
+                'is_admin'                => true,
             ],
-            'regular user is not admin' => [
-                'user' => UserTestBuilder::anActiveUser()->withoutMemberOfProjects()->build(),
-                'project' => $project,
-                'is_site_mediawiki_admin' => false,
-                'is_admin' => false,
+            'site wide mediawiki administrators has all permissions even if restricted' => [
+                'user'                    => UserTestBuilder::anActiveUser()->build(),
+                'project'                 => $project,
+                'check_access'            => CheckProjectAccessStub::withRestrictedUserWithoutAccess(),
+                'is_site_mediawiki_admin' => true,
+                'is_admin'                => true,
             ],
-            'project members are not admin' => [
-                'user' => UserTestBuilder::anActiveUser()->withMemberOf($project)->build(),
-                'project' => $project,
+            'site wide mediawiki administrators has no permission if project is deleted' => [
+                'user'                    => UserTestBuilder::anActiveUser()->build(),
+                'project'                 => $project,
+                'check_access'            => CheckProjectAccessStub::withDeletedProject(),
+                'is_site_mediawiki_admin' => true,
+                'is_admin'                => false,
+            ],
+            'site wide mediawiki administrators has no permission if project is suspended' => [
+                'user'                    => UserTestBuilder::anActiveUser()->build(),
+                'project'                 => $project,
+                'check_access'            => CheckProjectAccessStub::withSuspendedProject(),
+                'is_site_mediawiki_admin' => true,
+                'is_admin'                => false,
+            ],
+            'site wide mediawiki administrators has no permission if project is not valid' => [
+                'user'                    => UserTestBuilder::anActiveUser()->build(),
+                'project'                 => $project,
+                'check_access'            => CheckProjectAccessStub::withNotValidProject(),
+                'is_site_mediawiki_admin' => true,
+                'is_admin'                => false,
+            ],
+            'project administrator has all permissions'              => [
+                'user'                    => UserTestBuilder::anActiveUser()->withAdministratorOf($project)->build(),
+                'project'                 => $project,
+                'check_access'            => CheckProjectAccessStub::withValidAccess(),
                 'is_site_mediawiki_admin' => false,
-                'is_admin' => false,
+                'is_admin'                => true,
+            ],
+            'regular user is not admin'                              => [
+                'user'                    => UserTestBuilder::anActiveUser()
+                    ->withoutMemberOfProjects()
+                    ->withUserGroupMembership(
+                        $project,
+                        \ProjectUGroup::PROJECT_MEMBERS,
+                        false
+                    )
+                    ->withUserGroupMembership(
+                        $project,
+                        \ProjectUGroup::PROJECT_ADMIN,
+                        false
+                    )
+                    ->build(),
+                'project'                 => $project,
+                'check_access'            => CheckProjectAccessStub::withValidAccess(),
+                'is_site_mediawiki_admin' => false,
+                'is_admin'                => false,
+            ],
+            'project members are not admin'                          => [
+                'user'                    => UserTestBuilder::anActiveUser()
+                    ->withMemberOf($project)
+                    ->withUserGroupMembership(
+                        $project,
+                        \ProjectUGroup::PROJECT_MEMBERS,
+                        true
+                    )
+                    ->withUserGroupMembership(
+                        $project,
+                        \ProjectUGroup::PROJECT_ADMIN,
+                        false
+                    )
+                    ->build(),
+                'project'                 => $project,
+                'check_access'            => CheckProjectAccessStub::withValidAccess(),
+                'is_site_mediawiki_admin' => false,
+                'is_admin'                => false,
             ],
         ];
-    }
-
-    /**
-     * @dataProvider getWriterTestData
-     */
-    public function testGetPermissionsForWriters(PFUser $user, Project $project, bool $is_writer): void
-    {
-        $forge_permissions_retriever = new class implements ForgePermissionsRetriever
-        {
-            public function doesUserHavePermission(PFUser $user, User_ForgeUserGroupPermission $permission): bool
-            {
-                return false;
-            }
-        };
-
-        $permission_builder = new UserPermissionsBuilder($forge_permissions_retriever, CheckProjectAccessStub::withValidAccess());
-
-        $user_permissions = $permission_builder->getPermissions($user, $project);
-
-        self::assertEquals($is_writer, $user_permissions->is_writer);
     }
 
     public function getWriterTestData(): iterable
     {
         $project = ProjectTestBuilder::aProject()->withId(101)->build();
+
         return [
-            'regular user is not writer' => [
-                'user' => UserTestBuilder::anActiveUser()->withoutMemberOfProjects()->build(),
-                'project' => $project,
+            'regular user is not writer'  => [
+                'user'      => UserTestBuilder::anActiveUser()
+                    ->withoutMemberOfProjects()
+                    ->withUserGroupMembership(
+                        $project,
+                        \ProjectUGroup::PROJECT_MEMBERS,
+                        false
+                    )->build(),
+                'project'   => $project,
                 'is_writer' => false,
             ],
             'project members are writers' => [
-                'user' => UserTestBuilder::anActiveUser()->withMemberOf($project)->build(),
-                'project' => $project,
+                'user'      => UserTestBuilder::anActiveUser()
+                    ->withMemberOf($project)
+                    ->withUserGroupMembership(
+                        $project,
+                        \ProjectUGroup::PROJECT_MEMBERS,
+                        true
+                    )->build(),
+                'project'   => $project,
                 'is_writer' => true,
             ],
         ];
@@ -140,61 +213,123 @@ final class UserPermissionsBuilderTest extends TestCase
     /**
      * @dataProvider getReadersTestData
      */
-    public function testGetPermissionsForReaders(PFUser $user, Project $project, CheckProjectAccess $check_project_access, bool $is_reader): void
-    {
-        $forge_permissions_retriever = new class implements ForgePermissionsRetriever
-        {
+    public function testGetPermissionsForReaders(
+        PFUser $user,
+        Project $project,
+        CheckProjectAccess $check_project_access,
+        bool $is_reader,
+        bool $is_writer,
+        bool $is_admin,
+    ): void {
+        $forge_permissions_retriever = new class implements ForgePermissionsRetriever {
             public function doesUserHavePermission(PFUser $user, User_ForgeUserGroupPermission $permission): bool
             {
                 return false;
             }
         };
 
-        $permission_builder = new UserPermissionsBuilder($forge_permissions_retriever, $check_project_access);
+        $dao = ISearchByProjectStub::buildWithPermissions(
+            [self::READER_UGROUP_ID],
+            [self::WRITER_UGROUP_ID],
+            [self::ADMIN_UGROUP_ID],
+        );
+
+        $permission_builder = new UserPermissionsBuilder(
+            $forge_permissions_retriever,
+            $check_project_access,
+            new ProjectPermissionsRetriever($dao),
+        );
 
         $user_permissions = $permission_builder->getPermissions($user, $project);
 
         self::assertEquals($is_reader, $user_permissions->is_reader);
+        self::assertEquals($is_writer, $user_permissions->is_writer);
+        self::assertEquals($is_admin, $user_permissions->is_admin);
     }
 
-    public function getReadersTestData(): iterable
+    public static function getReadersTestData(): iterable
     {
+        $project = ProjectTestBuilder::aProject()->withId(101)->build();
+
         return [
-            'when user can access project, they can read' => [
-                'user' => UserTestBuilder::anAnonymousUser()->build(),
-                'project' => ProjectTestBuilder::aProject()->withId(101)->build(),
+            'when user is member of allowed ugroup, they can read'                        => [
+                'user'         => UserTestBuilder::anActiveUser()
+                    ->withUserGroupMembership($project, self::READER_UGROUP_ID, true)
+                    ->withUserGroupMembership($project, self::WRITER_UGROUP_ID, false)
+                    ->withUserGroupMembership($project, \ProjectUGroup::PROJECT_ADMIN, false)
+                    ->withUserGroupMembership($project, self::ADMIN_UGROUP_ID, false)
+                    ->build(),
+                'project'      => $project,
                 'check_access' => CheckProjectAccessStub::withValidAccess(),
-                'is_reader' => true,
+                'is_reader'    => true,
+                'is_writer'    => false,
+                'is_admin'     => false,
             ],
-            'when project is suspended, they cannot read' => [
-                'user' => UserTestBuilder::anAnonymousUser()->build(),
-                'project' => ProjectTestBuilder::aProject()->withId(101)->build(),
+            'when user is member of allowed ugroup, they can write (and read)'            => [
+                'user'         => UserTestBuilder::anActiveUser()
+                    ->withUserGroupMembership($project, self::READER_UGROUP_ID, false)
+                    ->withUserGroupMembership($project, self::WRITER_UGROUP_ID, true)
+                    ->withUserGroupMembership($project, \ProjectUGroup::PROJECT_ADMIN, false)
+                    ->withUserGroupMembership($project, self::ADMIN_UGROUP_ID, false)
+                    ->build(),
+                'project'      => $project,
+                'check_access' => CheckProjectAccessStub::withValidAccess(),
+                'is_reader'    => true,
+                'is_writer'    => true,
+                'is_admin'     => false,
+            ],
+            'when user is member of allowed ugroup, they can admin (and write, and read)' => [
+                'user'         => UserTestBuilder::anActiveUser()
+                    ->withUserGroupMembership($project, self::READER_UGROUP_ID, false)
+                    ->withUserGroupMembership($project, self::WRITER_UGROUP_ID, false)
+                    ->withUserGroupMembership($project, \ProjectUGroup::PROJECT_ADMIN, false)
+                    ->withUserGroupMembership($project, self::ADMIN_UGROUP_ID, true)
+                    ->build(),
+                'project'      => $project,
+                'check_access' => CheckProjectAccessStub::withValidAccess(),
+                'is_reader'    => true,
+                'is_writer'    => true,
+                'is_admin'     => true,
+            ],
+            'when project is suspended, they cannot read nor write'                       => [
+                'user'         => UserTestBuilder::anAnonymousUser()->build(),
+                'project'      => $project,
                 'check_access' => CheckProjectAccessStub::withSuspendedProject(),
-                'is_reader' => false,
+                'is_reader'    => false,
+                'is_writer'    => false,
+                'is_admin'     => false,
             ],
-            'when project is deleted, they cannot read' => [
-                'user' => UserTestBuilder::anAnonymousUser()->build(),
-                'project' => ProjectTestBuilder::aProject()->withId(101)->build(),
+            'when project is deleted, they cannot read nor write'                         => [
+                'user'         => UserTestBuilder::anAnonymousUser()->build(),
+                'project'      => $project,
                 'check_access' => CheckProjectAccessStub::withDeletedProject(),
-                'is_reader' => false,
+                'is_reader'    => false,
+                'is_writer'    => false,
+                'is_admin'     => false,
             ],
-            'when user cannot access private project, they cannot read' => [
-                'user' => UserTestBuilder::anAnonymousUser()->build(),
-                'project' => ProjectTestBuilder::aProject()->withId(101)->build(),
+            'when user cannot access private project, they cannot read nor write'         => [
+                'user'         => UserTestBuilder::anAnonymousUser()->build(),
+                'project'      => $project,
                 'check_access' => CheckProjectAccessStub::withPrivateProjectWithoutAccess(),
-                'is_reader' => false,
+                'is_reader'    => false,
+                'is_writer'    => false,
+                'is_admin'     => false,
             ],
-            'when restricted user cannot access, they cannot read' => [
-                'user' => UserTestBuilder::anAnonymousUser()->build(),
-                'project' => ProjectTestBuilder::aProject()->withId(101)->build(),
+            'when restricted user cannot access, they cannot read nor write'              => [
+                'user'         => UserTestBuilder::anAnonymousUser()->build(),
+                'project'      => $project,
                 'check_access' => CheckProjectAccessStub::withNotValidProject(),
-                'is_reader' => false,
+                'is_reader'    => false,
+                'is_writer'    => false,
+                'is_admin'     => false,
             ],
-            'when project is not found, they cannot read' => [
-                'user' => UserTestBuilder::anAnonymousUser()->build(),
-                'project' => ProjectTestBuilder::aProject()->withId(101)->build(),
+            'when project is not found, they cannot read nor write'                       => [
+                'user'         => UserTestBuilder::anAnonymousUser()->build(),
+                'project'      => $project,
                 'check_access' => CheckProjectAccessStub::withRestrictedUserWithoutAccess(),
-                'is_reader' => false,
+                'is_reader'    => false,
+                'is_writer'    => false,
+                'is_admin'     => false,
             ],
         ];
     }

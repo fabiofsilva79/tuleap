@@ -86,8 +86,13 @@ class Tracker_FormElement_Field_File extends Tracker_FormElement_Field
         return new Tracker_Report_Criteria_File_ValueDao();
     }
 
-    public function fetchChangesetValue($artifact_id, $changeset_id, $value, $report = null, $from_aid = null)
-    {
+    public function fetchChangesetValue(
+        int $artifact_id,
+        int $changeset_id,
+        mixed $value,
+        ?Tracker_Report $report = null,
+        ?int $from_aid = null,
+    ): string {
         $html             = '';
         $submitter_needed = true;
         $html            .= $this->fetchAllAttachment($artifact_id, $this->getChangesetValues($changeset_id), $submitter_needed, []);
@@ -560,9 +565,10 @@ class Tracker_FormElement_Field_File extends Tracker_FormElement_Field
     public function previewAttachment($attachment_id)
     {
         if ($fileinfo = $this->getTrackerFileInfoFactory()->getById($attachment_id)) {
-            if ($fileinfo->isImage() && file_exists($fileinfo->getThumbnailPath())) {
+            $thumbnail_path = $fileinfo->getThumbnailPath();
+            if ($fileinfo->isImage() && $thumbnail_path !== null && file_exists($thumbnail_path)) {
                 header('Content-type: ' . $fileinfo->getFiletype());
-                readfile($fileinfo->getThumbnailPath());
+                readfile($thumbnail_path);
             }
         }
         exit();

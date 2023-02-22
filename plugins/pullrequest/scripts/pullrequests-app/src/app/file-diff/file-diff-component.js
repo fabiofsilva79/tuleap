@@ -18,9 +18,9 @@
  */
 
 import "./file-diff.tpl.html";
-import { isUnifiedMode, isSideBySideMode } from "./diff-mode-state.ts";
-import { initCommentsStore } from "./comments-store.ts";
-import { doesChangedCodeContainsPotentiallyDangerousBidirectionalUnicodeText } from "./diff-bidirectional-unicode-text";
+import { isUnifiedMode, isSideBySideMode } from "./diff-modes/diff-mode-state.ts";
+import { initCommentsStore } from "./editors/comments-store.ts";
+import { doesChangedCodeContainsPotentiallyDangerousBidirectionalUnicodeText } from "./editors/diff-bidirectional-unicode-text";
 import { PullRequestCommentPresenter } from "../comments/PullRequestCommentPresenter";
 
 export default {
@@ -39,6 +39,7 @@ function controller($state, SharedPropertiesService, FileDiffRestService) {
         has_potentially_dangerous_bidirectional_unicode_text: false,
         diff: null,
         file_path: $state.params.file_path,
+        comment_id: $state.params.comment_id,
         pull_request_id: SharedPropertiesService.getPullRequest().id,
         shouldShowUnifiedDiff,
         shouldShowSideBySideDiff,

@@ -22,8 +22,11 @@ declare(strict_types=1);
 
 namespace Tuleap\OnlyOffice\Open;
 
+use Tuleap\Cryptography\ConcealedString;
 use Tuleap\NeverThrow\Result;
 use Tuleap\OnlyOffice\Administration\CheckOnlyOfficeIsAvailable;
+use Tuleap\OnlyOffice\DocumentServer\DocumentServer;
+use Tuleap\OnlyOffice\Stubs\IRetrieveDocumentServersStub;
 use Tuleap\Test\Builders\ProjectTestBuilder;
 use Tuleap\Test\PHPUnit\TestCase;
 use Tuleap\Test\Stubs\ProjectByIDFactoryStub;
@@ -97,7 +100,7 @@ class DocmanFileLastVersionToOnlyOfficeDocumentTransformerTest extends TestCase
         self::assertSame($expected_can_be_edited, $result->unwrapOr(null)->can_be_edited);
     }
 
-    public function dataProviderHappyPath(): array
+    public static function dataProviderHappyPath(): array
     {
         return [
             'Editable document user can write' => ['spec.docx', true, true],
@@ -121,7 +124,8 @@ class DocmanFileLastVersionToOnlyOfficeDocumentTransformerTest extends TestCase
                     return $this->is_onlyoffice_available_for_project;
                 }
             },
-            ProjectByIDFactoryStub::buildWith($this->project)
+            ProjectByIDFactoryStub::buildWith($this->project),
+            IRetrieveDocumentServersStub::buildWith(DocumentServer::withoutProjectRestrictions(1, 'https://example.com', new ConcealedString('very_secret'))),
         );
     }
 }

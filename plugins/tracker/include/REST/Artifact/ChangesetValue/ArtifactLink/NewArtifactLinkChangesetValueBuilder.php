@@ -27,15 +27,13 @@ use Tuleap\Tracker\Artifact\ChangesetValue\ArtifactLink\CollectionOfForwardLinks
 use Tuleap\Tracker\Artifact\ChangesetValue\ArtifactLink\NewArtifactLinkChangesetValue;
 use Tuleap\Tracker\Artifact\ChangesetValue\ArtifactLink\NewParentLink;
 use Tuleap\Tracker\Artifact\ChangesetValue\ArtifactLink\RetrieveForwardLinks;
+use Tuleap\Tracker\Artifact\ChangesetValue\ArtifactLink\CollectionOfReverseLinks;
+use Tuleap\Tracker\REST\v1\ArtifactValuesRepresentation;
 
 final class NewArtifactLinkChangesetValueBuilder
 {
-    private const PARENT_KEY = 'parent';
-    private const LINKS_KEY  = 'links';
-
-    public function __construct(
-        private RetrieveForwardLinks $forward_links_retriever,
-    ) {
+    public function __construct(private RetrieveForwardLinks $forward_links_retriever)
+    {
     }
 
     /**
@@ -45,12 +43,21 @@ final class NewArtifactLinkChangesetValueBuilder
         Artifact $artifact,
         \Tracker_FormElement_Field_ArtifactLink $link_field,
         \PFUser $submitter,
-        array $payload,
+        ArtifactValuesRepresentation $payload,
     ): NewArtifactLinkChangesetValue {
-        $payload_has_parent_key = $this->doesPayloadHaveAParentKey($payload);
-        $payload_has_links_key  = $this->doesPayloadHaveALinksKey($payload);
+        $valid_payload = ValidArtifactLinkPayloadBuilder::buildPayloadAndCheckValidity($payload);
 
-        if (! $payload_has_parent_key && ! $payload_has_links_key) {
+        if ($valid_payload->isAllLinksPayload()) {
+            return NewArtifactLinkChangesetValue::fromParts(
+                $link_field->getId(),
+                $this->forward_links_retriever->retrieve($submitter, $link_field, $artifact),
+                $this->buildForward($payload),
+                null,
+                $this->buildReverse($payload)
+            );
+        }
+
+        if ($valid_payload->hasNotDefinedLinksOrParent()) {
             throw new \Tracker_FormElement_InvalidFieldValueException(
                 'Value should be \'links\' and an array of {"id": integer, ["type": string]} and/or \'parent\' with {"id": integer}'
             );
@@ -59,47 +66,60 @@ final class NewArtifactLinkChangesetValueBuilder
         return NewArtifactLinkChangesetValue::fromParts(
             $link_field->getId(),
             $this->forward_links_retriever->retrieve($submitter, $link_field, $artifact),
-            $this->buildFromLinksKey($payload_has_links_key, $payload),
-            $this->buildParent($payload_has_parent_key, $payload),
+            $this->buildFromLinksKey($payload),
+            $this->buildParent($payload),
+            new CollectionOfReverseLinks([])
         );
     }
 
-    private function doesPayloadHaveAParentKey(array $payload): bool
-    {
-        return array_key_exists(self::PARENT_KEY, $payload);
-    }
-
-    private function doesPayloadHaveALinksKey(array $payload): bool
-    {
-        return array_key_exists(self::LINKS_KEY, $payload)
-            && is_array($payload[self::LINKS_KEY]);
-    }
-
     /**
      * @throws \Tracker_FormElement_InvalidFieldValueException
      */
-    private function buildParent(bool $payload_has_parent_key, array $payload): ?NewParentLink
+    private function buildParent(ArtifactValuesRepresentation $payload): ?NewParentLink
     {
-        if (! $payload_has_parent_key) {
+        if ($payload->parent === null) {
             return null;
         }
-        return RESTNewParentLinkProxy::fromRESTPayload($payload[self::PARENT_KEY]);
+        return RESTNewParentLinkProxy::fromRESTPayload($payload->parent);
     }
 
     /**
      * @throws \Tracker_FormElement_InvalidFieldValueException
      */
-    private function buildFromLinksKey(bool $payload_has_links_key, array $payload): ?CollectionOfForwardLinks
+    private function buildFromLinksKey(ArtifactValuesRepresentation $payload): ?CollectionOfForwardLinks
     {
-        if (! $payload_has_links_key) {
+        if ($payload->links === null) {
             return null;
         }
 
         return new CollectionOfForwardLinks(
             array_map(
                 static fn(array $payload_link) => RESTForwardLinkProxy::fromPayload($payload_link),
-                $payload[self::LINKS_KEY]
+                $payload->links
             )
         );
+    }
+
+    /**
+     * @throws \Tracker_FormElement_InvalidFieldValueException
+     */
+    private function buildReverse(ArtifactValuesRepresentation $payload): CollectionOfReverseLinks
+    {
+        if ($payload->all_links === null) {
+            return new CollectionOfReverseLinks([]);
+        }
+
+        return AllLinkPayloadParser::buildReverseLinks($payload->all_links);
+    }
+
+    /**
+     * @throws \Tracker_FormElement_InvalidFieldValueException
+     */
+    private function buildForward(ArtifactValuesRepresentation $payload): CollectionOfForwardLinks
+    {
+        if ($payload->all_links === null) {
+            return new CollectionOfForwardLinks([]);
+        }
+        return AllLinkPayloadParser::buildForwardLinks($payload->all_links);
     }
 }

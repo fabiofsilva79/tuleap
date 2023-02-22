@@ -20,13 +20,14 @@
 import type {
     FileDiffCommentWidget,
     FileDiffPlaceholderWidget,
-} from "../../src/app/file-diff/diff-modes/types";
+} from "../../src/app/file-diff/types";
 import { PullRequestCommentPresenterStub } from "./PullRequestCommentPresenterStub";
 import { RelativeDateHelperStub } from "./RelativeDateHelperStub";
 import { PullRequestCommentControllerStub } from "./PullRequestCommentControllerStub";
 import { CurrentPullRequestUserPresenterStub } from "./CurrentPullRequestUserPresenterStub";
 import { CurrentPullRequestPresenterStub } from "./CurrentPullRequestPresenterStub";
 import { SaveNewInlineCommentStub } from "./SaveNewInlineCommentStub";
+import type { InlineCommentWidget } from "../../src/app/file-diff/types";
 
 const base_element = document.implementation.createHTMLDocument().createElement("div");
 
@@ -49,7 +50,10 @@ const stubBounding = (height: number) => {
 };
 
 export const FileDiffWidgetStub = {
-    buildInlineCommentWidget: (height = 20): FileDiffCommentWidget => ({
+    buildInlineCommentWidget: (
+        height = 20,
+        data: Partial<InlineCommentWidget> = {}
+    ): InlineCommentWidget => ({
         ...base_element,
         localName: "tuleap-pullrequest-comment",
         getBoundingClientRect: stubBounding(height),
@@ -59,6 +63,7 @@ export const FileDiffWidgetStub = {
         currentUser: CurrentPullRequestUserPresenterStub.withDefault(),
         currentPullRequest: CurrentPullRequestPresenterStub.withDefault(),
         post_rendering_callback: noop,
+        ...data,
     }),
 
     buildNewCommentFormWidget: (height = 20): FileDiffCommentWidget => ({
@@ -77,6 +82,7 @@ export const FileDiffWidgetStub = {
         getBoundingClientRect: stubBounding(height),
         isReplacingAComment: true,
         height,
+        post_rendering_callback: noop,
     }),
 
     buildCodePlaceholder: (height = 20): FileDiffPlaceholderWidget => ({
@@ -85,5 +91,6 @@ export const FileDiffWidgetStub = {
         getBoundingClientRect: stubBounding(height),
         isReplacingAComment: false,
         height,
+        post_rendering_callback: noop,
     }),
 };

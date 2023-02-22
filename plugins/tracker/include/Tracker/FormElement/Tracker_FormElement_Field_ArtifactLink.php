@@ -19,6 +19,7 @@
  * along with Tuleap. If not, see <http://www.gnu.org/licenses/>.
  */
 
+use Tuleap\Config\ConfigKeyCategory;
 use Tuleap\Config\FeatureFlagConfigKey;
 use Tuleap\Tracker\Admin\ArtifactLinksUsageDao;
 use Tuleap\Tracker\Artifact\Artifact;
@@ -28,6 +29,7 @@ use Tuleap\Tracker\FormElement\Field\ArtifactLink\ArtifactLinkFieldValueDao;
 use Tuleap\Tracker\FormElement\Field\ArtifactLink\ArtifactLinksToRender;
 use Tuleap\Tracker\FormElement\Field\ArtifactLink\ArtifactLinksToRenderForPerTrackerTable;
 use Tuleap\Tracker\FormElement\Field\ArtifactLink\ArtifactLinkValueSaver;
+use Tuleap\Tracker\FormElement\Field\ArtifactLink\DisplayArtifactLinkEvent;
 use Tuleap\Tracker\FormElement\Field\ArtifactLink\FieldDataBuilder;
 use Tuleap\Tracker\FormElement\Field\ArtifactLink\ParentLinkAction;
 use Tuleap\Tracker\FormElement\Field\ArtifactLink\PossibleParentSelectorRenderer;
@@ -44,8 +46,8 @@ use Tuleap\Tracker\FormElement\Field\ArtifactLink\Type\TypePresenterFactory;
 use Tuleap\Tracker\FormElement\Field\ArtifactLink\Type\TypeTablePresenter;
 use Tuleap\Tracker\FormElement\Field\File\CreatedFileURLMapping;
 
-// phpcs:ignore PSR1.Classes.ClassDeclaration.MissingNamespace, Squiz.Classes.ValidClassName.NotCamelCaps
-class Tracker_FormElement_Field_ArtifactLink extends Tracker_FormElement_Field
+#[ConfigKeyCategory('Tracker')]
+class Tracker_FormElement_Field_ArtifactLink extends Tracker_FormElement_Field // phpcs:ignore PSR1.Classes.ClassDeclaration.MissingNamespace, Squiz.Classes.ValidClassName.NotCamelCaps
 {
     #[FeatureFlagConfigKey("Feature flag to hide by default reverse links in artifact view (legacy behaviour)")]
     public const HIDE_REVERSE_LINKS_KEY = 'hide_reverse_links_by_default';
@@ -137,18 +139,13 @@ class Tracker_FormElement_Field_ArtifactLink extends Tracker_FormElement_Field
         return $html;
     }
 
-    /**
-     * Display the field as a Changeset value.
-     * Used in report table
-     *
-     * @param int $artifact_id the corresponding artifact id
-     * @param int $changeset_id the corresponding changeset
-     * @param mixed $value the value of the field
-     *
-     * @return string
-     */
-    public function fetchChangesetValue($artifact_id, $changeset_id, $value, $report = null, $from_aid = null)
-    {
+    public function fetchChangesetValue(
+        int $artifact_id,
+        int $changeset_id,
+        mixed $value,
+        ?Tracker_Report $report = null,
+        ?int $from_aid = null,
+    ): string {
         $arr    = [];
         $values = $this->getChangesetValues($this->getCurrentUser(), $changeset_id);
         foreach ($values as $artifact_link_info) {
@@ -668,13 +665,18 @@ class Tracker_FormElement_Field_ArtifactLink extends Tracker_FormElement_Field
         $html              = '';
         $template_renderer = $this->getTemplateRenderer();
         foreach ($artifact_links_to_render->getArtifactLinksForPerTypeDisplay() as $artifact_links_per_type) {
+            $event = EventManager::instance()->dispatch(
+                new DisplayArtifactLinkEvent($artifact_links_per_type->getTypePresenter())
+            );
+
             $html .= $template_renderer->renderToString(
                 'artifactlink-type-table',
                 new TypeTablePresenter(
                     $artifact_links_per_type->getTypePresenter(),
                     $artifact_links_per_type->getArtifactLinks(),
                     $is_reverse_artifact_links,
-                    $this
+                    $this,
+                    $event->canLinkBeModified()
                 )
             );
         }
@@ -1815,9 +1817,13 @@ class Tracker_FormElement_Field_ArtifactLink extends Tracker_FormElement_Field
         }
 
         if ($type_html !== '') {
+            $event = EventManager::instance()->dispatch(
+                new DisplayArtifactLinkEvent($type_presenter)
+            );
+
             $head_html = $this->getTemplateRenderer()->renderToString(
                 'artifactlink-type-table-head',
-                TypeTablePresenter::buildForHeader($type_presenter, $this)
+                TypeTablePresenter::buildForHeader($type_presenter, $this, $event->canLinkBeModified())
             );
 
             $result[$key] = ['head' => $head_html, 'rows' => $type_html];

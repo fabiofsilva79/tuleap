@@ -18,6 +18,8 @@
  * along with Tuleap. If not, see <http://www.gnu.org/licenses/>.
  */
 
+declare(strict_types=1);
+
 namespace Tuleap\Tracker;
 
 use Mockery\Adapter\Phpunit\MockeryPHPUnitIntegration;
@@ -29,7 +31,7 @@ use Tuleap\Tracker\Colorpicker\ColorpickerMountPointPresenter;
 use Tuleap\Tracker\FormElement\FormElementListValueAdminViewPresenter;
 use Tuleap\Tracker\FormElement\FormElementListValueAdminViewPresenterBuilder;
 
-class FormElementListValueAdminViewPresenterBuilderTest extends \Tuleap\Test\PHPUnit\TestCase
+final class FormElementListValueAdminViewPresenterBuilderTest extends \Tuleap\Test\PHPUnit\TestCase
 {
     use MockeryPHPUnitIntegration;
 
@@ -63,7 +65,7 @@ class FormElementListValueAdminViewPresenterBuilderTest extends \Tuleap\Test\PHP
         $value->shouldReceive('getDescription')->andReturn("description");
         $value->shouldReceive('isHidden')->andReturn(false);
 
-        $decorator = \Mockery::mock(ColorpickerMountPointPresenter::class);
+        $decorator = new ColorpickerMountPointPresenter('fiesta-red', 'name', 'id', true, false);
 
         $expected_result = new FormElementListValueAdminViewPresenter(
             $value,
@@ -96,7 +98,7 @@ class FormElementListValueAdminViewPresenterBuilderTest extends \Tuleap\Test\PHP
 
         $value->shouldReceive('isHidden')->andReturn(false);
 
-        $decorator = \Mockery::mock(ColorpickerMountPointPresenter::class);
+        $decorator = new ColorpickerMountPointPresenter('fiesta-red', 'name', 'id', true, false);
 
         $expected_result = new FormElementListValueAdminViewPresenter(
             $value,
@@ -104,7 +106,7 @@ class FormElementListValueAdminViewPresenterBuilderTest extends \Tuleap\Test\PHP
             false,
             false,
             "/plugins/tracker/?tracker=5&func=admin-formElement-update&formElement=111&bind-update=1&bind%5Bdelete%5D=100",
-            "You can't hide this value since it is used in a semantic, in workflow, in transitions or in field dependency",
+            '"None" value cannot be hidden',
             'cannot hide',
             '--exclamation-hidden',
             false
@@ -124,7 +126,7 @@ class FormElementListValueAdminViewPresenterBuilderTest extends \Tuleap\Test\PHP
         $value->shouldReceive('getLabel')->andReturn("label");
         $value->shouldReceive('isHidden')->andReturn(false);
 
-        $decorator = \Mockery::mock(ColorpickerMountPointPresenter::class);
+        $decorator = new ColorpickerMountPointPresenter('fiesta-red', 'name', 'id', true, false);
 
         $expected_result = new FormElementListValueAdminViewPresenter(
             $value,

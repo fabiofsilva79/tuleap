@@ -29,11 +29,17 @@ type MapOfClasses = Record<string, boolean>;
 
 export const getArtifactStatusBadgeClasses = (
     artifact: LinkedArtifactPresenter | NewLink
-): MapOfClasses => ({
-    "tlp-badge-outline": true,
-    "tlp-badge-success": artifact.is_open,
-    "tlp-badge-secondary": !artifact.is_open,
-});
+): MapOfClasses => {
+    const classes: MapOfClasses = {
+        "tlp-badge-outline": true,
+    };
+    if (artifact.status && artifact.status.color) {
+        classes[`tlp-badge-${artifact.status.color}`] = true;
+    } else {
+        classes["tlp-badge-secondary"] = true;
+    }
+    return classes;
+};
 
 export const getCrossRefClasses = (artifact: LinkedArtifactPresenter | NewLink): MapOfClasses => {
     const badge_color = `tlp-swatch-${artifact.xref.color}`;
@@ -59,7 +65,7 @@ export const getNewLinkTemplate = (link: NewLink): UpdateFunction<LinkField> => 
     };
 
     return html`
-        <tr class="link-field-table-row link-field-table-row-new" data-test="link-row">
+        <tr class="link-field-table-row tlp-table-row-success" data-test="link-row">
             <td class="link-field-table-cell-type" data-test="link-type">
                 ${getArtifactLinkTypeLabel(link)}
             </td>
@@ -82,7 +88,7 @@ export const getNewLinkTemplate = (link: NewLink): UpdateFunction<LinkField> => 
                 ${link.status &&
                 html`
                     <span class="${getArtifactStatusBadgeClasses(link)}" data-test="link-status">
-                        ${link.status}
+                        ${link.status.value}
                     </span>
                 `}
             </td>

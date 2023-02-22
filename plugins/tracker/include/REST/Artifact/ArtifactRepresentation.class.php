@@ -106,6 +106,11 @@ class ArtifactRepresentation
     public $status;
 
     /**
+     * @var StatusValueRepresentation | null the data linked to status representation
+     */
+    public $full_status;
+
+    /**
      * @var bool whether the current status semantic value is considered open or closed {@type bool}
      */
     public bool $is_open;
@@ -138,6 +143,7 @@ class ArtifactRepresentation
         bool $is_open,
         ?string $title,
         array $assignees,
+        ?StatusValueRepresentation $status_value_representation,
     ) {
         $this->id                 = $id;
         $this->uri                = $uri;
@@ -156,10 +162,17 @@ class ArtifactRepresentation
         $this->is_open            = $is_open;
         $this->title              = $title;
         $this->assignees          = $assignees;
+        $this->full_status        = $status_value_representation;
     }
 
-    public static function build(PFUser $current_user, Artifact $artifact, ?array $values, ?array $values_by_field, TrackerRepresentation $tracker_representation): self
-    {
+    public static function build(
+        PFUser $current_user,
+        Artifact $artifact,
+        ?array $values,
+        ?array $values_by_field,
+        TrackerRepresentation $tracker_representation,
+        StatusValueRepresentation $status_value_representation,
+    ): self {
         $artifact_id = $artifact->getId();
 
         $assignees = [];
@@ -168,24 +181,32 @@ class ArtifactRepresentation
             $assignees[]         = $user_representation;
         }
 
+        $status_representation = $status_value_representation;
+        if ($status_value_representation->value === "") {
+            $status_representation = null;
+        }
+
+        $submitted_by_user = $artifact->getSubmittedByUser();
+
         return new self(
             JsonCast::toInt($artifact_id),
             self::ROUTE . '/' . $artifact_id,
             $artifact->getXRef(),
             $tracker_representation,
             new ProjectReference($artifact->getTracker()->getProject()),
-            JsonCast::toInt($artifact->getSubmittedBy()),
-            MinimalUserRepresentation::build($artifact->getSubmittedByUser()),
+            JsonCast::toInt($submitted_by_user->getId()),
+            MinimalUserRepresentation::build($submitted_by_user),
             JsonCast::toDate($artifact->getSubmittedOn()),
             $artifact->getUri(),
-            self::ROUTE . '/' .  $artifact_id . '/' . ChangesetRepresentation::ROUTE,
+            self::ROUTE . '/' . $artifact_id . '/' . ChangesetRepresentation::ROUTE,
             $values,
             $values_by_field,
             JsonCast::toDate($artifact->getLastUpdateDate()),
-            $artifact->getStatus(),
+            $status_value_representation->value,
             $artifact->isOpen(),
             $artifact->getTitle(),
-            $assignees
+            $assignees,
+            $status_representation,
         );
     }
 }

@@ -25,9 +25,9 @@
 set -e
 
 function findPHPCLI() {
-    local php80_remi_scl='/opt/remi/php80/root/usr/bin/php'
-    if [ -x "$php80_remi_scl" ]; then
-        echo "$php80_remi_scl"
+    local php81_remi_scl='/opt/remi/php81/root/usr/bin/php'
+    if [ -x "$php81_remi_scl" ]; then
+        echo "$php81_remi_scl"
         return
     fi
     echo "php"
@@ -50,7 +50,7 @@ if [ "$DISPLAY_ERRORS" = true ]; then
     php_display_errors=""
 fi
 
-# Finally runs php interpretor
+# Finally runs php interpreter
 phpscript=$1;
 shift;
 exec "${PHP}" ${php_display_errors} ${PHP_PARAMS} $phpscript "$@"

@@ -19,29 +19,32 @@
 
 import CodeMirror from "codemirror";
 import "codemirror/addon/scroll/simplescrollbars.js";
-import { getStore } from "../comments-store.ts";
-import { SideBySideLineState } from "./side-by-side-lines-state.ts";
-import { SideBySideCodePlaceholderCreationManager } from "./side-by-side-code-placeholder-creation-manager.ts";
-import { synchronize } from "./side-by-side-scroll-synchronizer.ts";
-import { getCollapsibleSectionsSideBySide } from "../../code-collapse/collaspible-code-sections-builder.ts";
-import { SideBySideLinesHeightEqualizer } from "./side-by-side-line-height-equalizer.ts";
+import { getStore } from "../editors/comments-store.ts";
+import { SideBySideLineState } from "../file-lines/SideBySideLineState.ts";
+import { SideBySideCodePlaceholderCreationManager } from "../widgets/placeholders/SideBySideCodePlaceholderCreationManager.ts";
+import { synchronize } from "../editors/side-by-side-scroll-synchronizer.ts";
+import { getCollapsibleSectionsSideBySide } from "../code-collapse/collaspible-code-sections-builder.ts";
+import { SideBySideLinesHeightEqualizer } from "../widgets/placeholders/SideBySideLinesHeightEqualizer.ts";
 
 import { INLINE_COMMENT_POSITION_RIGHT, INLINE_COMMENT_POSITION_LEFT } from "../../comments/types";
 
-import "./modes.ts";
-import { getCodeMirrorConfigurationToMakePotentiallyDangerousBidirectionalCharactersVisible } from "../diff-bidirectional-unicode-text";
-import { SideBySideLineGrouper } from "./side-by-side-line-grouper";
-import { SideBySideLineMapper } from "./side-by-side-line-mapper";
-import { SideBySideCodeMirrorsContentManager } from "./side-by-side-code-mirrors-content-manager";
-import { SideBySidePlaceholderPositioner } from "./side-by-side-placeholder-positioner";
-import { SideBySideCodeMirrorWidgetCreator } from "./side-by-side-code-mirror-widget-creator";
+import "../editors/modes.ts";
+import { getCodeMirrorConfigurationToMakePotentiallyDangerousBidirectionalCharactersVisible } from "../editors/diff-bidirectional-unicode-text";
+import { SideBySideLineGrouper } from "../file-lines/SideBySideLineGrouper";
+import { SideBySideLineMapper } from "../file-lines/SideBySideLineMapper";
+import { SideBySideCodeMirrorsContentManager } from "../editors/SideBySideCodeMirrorsContentManager";
+import { SideBySidePlaceholderPositioner } from "../widgets/placeholders/SideBySidePlaceholderPositioner";
+import { SideBySideCodeMirrorWidgetCreator } from "../widgets/SideBySideCodeMirrorWidgetCreator";
 import { RelativeDateHelper } from "../../helpers/date-helpers";
 import { PullRequestCurrentUserPresenter } from "../../comments/PullRequestCurrentUserPresenter";
 import { PullRequestCommentController } from "../../comments/PullRequestCommentController";
 import { PullRequestCommentReplyFormFocusHelper } from "../../comments/PullRequestCommentReplyFormFocusHelper";
 import { PullRequestCommentNewReplySaver } from "../../comments/PullRequestCommentReplySaver";
 import { PullRequestPresenter } from "../../comments/PullRequestPresenter";
-import { SideBySideCodeMirrorWidgetsCreationManager } from "./side-by-side-code-mirror-widgets-creation-manager";
+import { SideBySideCodeMirrorWidgetsCreationManager } from "../widgets/SideBySideCodeMirrorWidgetsCreationManager";
+import { FileDiffCommentScroller } from "../scroll-to-comment/FileDiffCommentScroller";
+import { FileDiffCommentWidgetsMap } from "../scroll-to-comment/FileDiffCommentWidgetsMap";
+import { collapseCommonSectionsSideBySide } from "../code-collapse/code-mirror-common-sections-collapse";
 
 export default {
     template: `
@@ -53,18 +56,13 @@ export default {
         diff: "<",
         filePath: "@",
         pullRequestId: "@",
+        commentId: "@",
     },
 };
 
-controller.$inject = [
-    "$element",
-    "$scope",
-    "$q",
-    "CodeMirrorHelperService",
-    "SharedPropertiesService",
-];
+controller.$inject = ["$element", "$scope", "SharedPropertiesService"];
 
-function controller($element, $scope, $q, CodeMirrorHelperService, SharedPropertiesService) {
+function controller($element, $scope, SharedPropertiesService) {
     const self = this;
 
     Object.assign(self, {
@@ -98,7 +96,9 @@ function controller($element, $scope, $q, CodeMirrorHelperService, SharedPropert
             file_lines,
             getStore().getAllRootComments()
         );
-        CodeMirrorHelperService.collapseCommonSectionsSideBySide(
+
+        collapseCommonSectionsSideBySide(
+            document,
             left_code_mirror,
             right_code_mirror,
             collapsible_sections
@@ -112,6 +112,7 @@ function controller($element, $scope, $q, CodeMirrorHelperService, SharedPropert
             right_code_mirror
         );
 
+        const comment_widgets_map = FileDiffCommentWidgetsMap();
         const widget_creator = SideBySideCodeMirrorWidgetCreator(
             document,
             RelativeDateHelper(
@@ -122,14 +123,15 @@ function controller($element, $scope, $q, CodeMirrorHelperService, SharedPropert
             PullRequestCommentController(
                 PullRequestCommentReplyFormFocusHelper(),
                 getStore(),
-                PullRequestCommentNewReplySaver()
+                PullRequestCommentNewReplySaver(),
+                PullRequestCurrentUserPresenter.fromUserInfo(
+                    SharedPropertiesService.getUserId(),
+                    SharedPropertiesService.getUserAvatarUrl()
+                ),
+                PullRequestPresenter.fromPullRequest(SharedPropertiesService.getPullRequest())
             ),
             getStore(),
-            PullRequestPresenter.fromPullRequest(SharedPropertiesService.getPullRequest()),
-            PullRequestCurrentUserPresenter.fromUserInfo(
-                SharedPropertiesService.getUserId(),
-                SharedPropertiesService.getUserAvatarUrl()
-            )
+            comment_widgets_map
         );
 
         const file_lines_state = SideBySideLineState(
@@ -165,28 +167,28 @@ function controller($element, $scope, $q, CodeMirrorHelperService, SharedPropert
 
         getStore().getAllRootComments().forEach(widget_creation_manager.displayInlineComment);
 
-        const getLineNumberFromEvent = (gutter_click_event) =>
-            // We need this trick because CodeMirror can sometimes provide the
-            // wrong line number. Hence, we need to parse the content of the gutter
-            // which holds the line number.
-            Number.parseInt(gutter_click_event.target.textContent, 10) - 1;
-
-        left_code_mirror.on("gutterClick", (left_code_mirror, line_number, gutter, event) => {
+        left_code_mirror.on("gutterClick", (left_code_mirror, line_number) => {
             widget_creation_manager.displayNewInlineCommentForm(
                 INLINE_COMMENT_POSITION_LEFT,
                 self.pullRequestId,
                 self.filePath,
-                getLineNumberFromEvent(event)
+                line_number
             );
         });
-        right_code_mirror.on("gutterClick", (right_code_mirror, line_number, gutter, event) => {
+        right_code_mirror.on("gutterClick", (right_code_mirror, line_number) => {
             widget_creation_manager.displayNewInlineCommentForm(
                 INLINE_COMMENT_POSITION_RIGHT,
                 self.pullRequestId,
                 self.filePath,
-                getLineNumberFromEvent(event)
+                line_number
             );
         });
+
+        FileDiffCommentScroller(
+            getStore(),
+            file_lines,
+            comment_widgets_map
+        ).scrollToSideBySideDiffComment(self.commentId, left_code_mirror, right_code_mirror);
     }
 
     function displayLine(line, left_code_mirror, right_code_mirror) {

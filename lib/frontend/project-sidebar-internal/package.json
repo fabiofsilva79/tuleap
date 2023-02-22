@@ -4,9 +4,10 @@
   "license": "MIT",
   "private": true,
   "version": "0.0.0",
+  "type": "module",
   "types": "dist/index.d.ts",
-  "module": "dist/project-sidebar-internal.mjs",
-  "main": "dist/project-sidebar-internal.umd.js",
+  "module": "dist/project-sidebar-internal.js",
+  "main": "dist/project-sidebar-internal.umd.cjs",
   "style": "dist/style.css",
   "files": [
     "dist/",
@@ -14,22 +15,22 @@
   ],
   "dependencies": {
     "@fortawesome/fontawesome-free": "^6.1.1",
-    "@tuleap/burningparrot-theme": "link:../../../src/themes/BurningParrot",
-    "@tuleap/project-privacy-helper": "link:../project-privacy-helper",
-    "@tuleap/tlp": "link:../../../src/themes/tlp",
-    "@tuleap/tlp-popovers": "link:../tlp-popovers",
+    "@tuleap/burningparrot-theme": "workspace:*",
+    "@tuleap/project-privacy-helper": "workspace:*",
+    "@tuleap/tlp": "workspace:*",
+    "@tuleap/tlp-popovers": "workspace:*",
     "@vueuse/core": "^8.7.3",
     "vue": "^3.2.37",
-    "vue-dompurify-html": "^3.0.0-beta.3"
+    "vue-dompurify-html": "^4.0.0"
   },
   "devDependencies": {
-    "@tuleap/build-system-configurator": "link:../build-system-configurator",
+    "@tuleap/build-system-configurator": "workspace:*",
     "@vue/test-utils": "^2.0.0"
   },
   "scripts": {
     "typecheck": "vue-tsc --noEmit",
     "build": "vite build",
     "dev": "vite",
-    "test": "jest"
+    "test": "vitest"
   }
 }

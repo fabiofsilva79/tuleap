@@ -46,6 +46,7 @@ final class ServicePOSTDataBuilderTest extends \Tuleap\Test\PHPUnit\TestCase
         );
 
         \ForgeConfig::set('sys_default_domain', 'whatever');
+        $GLOBALS['Language']->method('getText')->willReturn('');
     }
 
     public function testBuildFromServiceThrowsWhenTemplateProjectAndNoShortname(): void
@@ -421,7 +422,7 @@ final class ServicePOSTDataBuilderTest extends \Tuleap\Test\PHPUnit\TestCase
         $this->assertEquals($expected_description, $service->getDescription());
     }
 
-    public function provideLabelAndDescription(): array
+    public static function provideLabelAndDescription(): array
     {
         return [
             'unmodified label and description' => [

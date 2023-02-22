@@ -68,15 +68,15 @@ final class MediawikiStandaloneProjectResourceTest extends \RestBase
         );
     }
 
-    public function getPermissionsData(): iterable
+    public static function getPermissionsData(): iterable
     {
         return [
-            'project admin as access to all' => [
+            'project admin has full access' => [
                 'user' => TestDataBuilder::TEST_USER_1_NAME,
                 'expected' => [
                     'is_reader' => true,
                     'is_writer' => true,
-                    'is_bot'    => true,
+                    'is_bot'    => false,
                     'is_admin'  => true,
                 ],
             ],
@@ -89,19 +89,19 @@ final class MediawikiStandaloneProjectResourceTest extends \RestBase
                     'is_admin'  => false,
                 ],
             ],
-            'external user is reader because project is public' => [
+            'external user is nothing even if project is public because by default only project members are readers' => [
                 'user' => TestDataBuilder::TEST_USER_2_NAME,
                 'expected' => [
-                    'is_reader' => true,
+                    'is_reader' => false,
                     'is_writer' => false,
                     'is_bot'    => false,
                     'is_admin'  => false,
                 ],
             ],
-            'anonymous user is reader because project is public and platform accessible to anonymous' => [
+            'anonymous user is nothing even if project is public and platform accessible to anonymous because by default only project members are readers' => [
                 'user' => null,
                 'expected' => [
-                    'is_reader' => true,
+                    'is_reader' => false,
                     'is_writer' => false,
                     'is_bot'    => false,
                     'is_admin'  => false,

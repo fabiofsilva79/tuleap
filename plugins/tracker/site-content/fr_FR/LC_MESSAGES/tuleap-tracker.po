@@ -10,12 +10,15 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=2; plural=(n > 1);\n"
-"X-Generator: Poedit 3.1.1\n"
+"X-Generator: Poedit 3.2.2\n"
 
 msgid "\"Attachment\" type field cannot be modified during artifact copy."
 msgstr ""
 "Le champ de type \"Fichiers à transmettre\" ne peut être modifié durant une "
 "copie d'un artéfact."
+
+msgid "\"None\" value cannot be hidden"
+msgstr "La valeur \"Aucun\" ne peut pas être cachée"
 
 msgid "\"duration\" field is empty or invalid"
 msgstr "Le champ \"duration\" est vide ou invalide"
@@ -124,6 +127,11 @@ msgid "%s working day"
 msgid_plural "%s working days"
 msgstr[0] "%s jour ouvrable"
 msgstr[1] "%s jours ouvrables"
+
+#, php-format
+msgid "'%s' is not a valid value for reminder notify closed artifacts"
+msgstr ""
+"'%s' n'est pas une valeur valide pour la notification des artéfacts fermés"
 
 #, php-format
 msgid "'%s' is not supported for the operator %s."
@@ -854,10 +862,6 @@ msgstr ""
 "est manquant."
 
 #, php-format
-msgid "Cannot delete the date reminder %1$s"
-msgstr "Impossible de supprimer le Rappel sur date de tracker %1$s"
-
-#, php-format
 msgid "Cannot update conditions of transition with id '%d'"
 msgstr ""
 "Impossible de mettre à jour les conditions de la transition ayant pour id "
@@ -943,6 +947,10 @@ msgstr ""
 
 msgid "Comment"
 msgstr "Commentaire"
+
+#, php-format
+msgid "Comment content can not contain more than %1$s characters."
+msgstr "Un commentaire ne peut pas contenir plus de %1$s caractères."
 
 msgid "Comment has been cleared"
 msgstr "Commentaire effacé"
@@ -2008,6 +2016,9 @@ msgstr "Ajouter un(e) %s"
 msgid "New tracker"
 msgstr "Nouvel outil de suivi"
 
+msgid "No"
+msgstr "Non"
+
 msgid "No Tracker pending for Deletion"
 msgstr "Aucun outil de suivi en attente de suppression"
 
@@ -2126,6 +2137,9 @@ msgstr "Notifications"
 
 msgid "Notified people"
 msgstr "Personnes notifiées"
+
+msgid "Notify closed artifacts"
+msgstr "Notifier les artéfacts fermés"
 
 msgid ""
 "Notify me on all updates of artifacts I'm involved (assigned, submitter, cc, "
@@ -2467,6 +2481,10 @@ msgstr "L'effort restant ne peux pas être supérieur à l'effort total."
 
 msgid "Remaining effort cannot be negative."
 msgstr "L'effort restant ne peut pas être négatif."
+
+#, php-format
+msgid "Reminder with ID %d not found."
+msgstr "Le rappel avec l'ID %d n'a pas été trouvé."
 
 #, php-format
 msgid "Reminder: '%1$s' %2$s for '%3$s'"
@@ -3922,6 +3940,14 @@ msgid "Tracker %1$s not duplicated"
 msgstr "L'outil de suivi %1$s n'a pas été copié"
 
 #, php-format
+msgid ""
+"Tracker %d has too many artifacts (%d) while limit was set to %d. Please "
+"refine your query"
+msgstr ""
+"L'outil de suivi %d contient trop d'artefacts (%d) alors que la limite a été "
+"fixée à %d. Merci de raffiner votre requête."
+
+#, php-format
 msgid "Tracker %s : field %s (%s) has no permission"
 msgstr "Outil de suivi %s : le champ %s (%s) n'a pas de permissons"
 
@@ -4296,6 +4322,9 @@ msgstr "Le mode du Workflow est incompatible avec la PostAction de type %s"
 
 msgid "XML file doesn't have correct format"
 msgstr "Le fichier XML a un format incorrect"
+
+msgid "Yes"
+msgstr "Oui"
 
 msgid "Yes, I am sure!"
 msgstr "Oui, je suis sûr !"

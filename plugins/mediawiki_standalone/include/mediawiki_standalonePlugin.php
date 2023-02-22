@@ -21,6 +21,11 @@
 declare(strict_types=1);
 
 use Laminas\HttpHandlerRunner\Emitter\SapiEmitter;
+use Tuleap\Admin\PermissionDelegation\ForgeUserGroupDeletedEvent;
+use Tuleap\admin\PermissionDelegation\PermissionDelegationsAddedToForgeUserGroupEvent;
+use Tuleap\Admin\PermissionDelegation\PermissionDelegationsRemovedForForgeUserGroupEvent;
+use Tuleap\Admin\PermissionDelegation\UserAddedToForgeUserGroupEvent;
+use Tuleap\Admin\PermissionDelegation\UsersRemovedFromForgeUserGroupEvent;
 use Tuleap\admin\ProjectEdit\ProjectStatusUpdate;
 use Tuleap\Authentication\Scope\AggregateAuthenticationScopeBuilder;
 use Tuleap\Authentication\Scope\AuthenticationScope;
@@ -33,10 +38,13 @@ use Tuleap\Config\ConfigDao;
 use Tuleap\Config\PluginWithConfigKeys;
 use Tuleap\DB\DBFactory;
 use Tuleap\DB\DBTransactionExecutorWithConnection;
+use Tuleap\Event\Events\ExportXmlProject;
 use Tuleap\Http\HTTPFactoryBuilder;
+use Tuleap\Http\Response\RedirectWithFeedbackFactory;
 use Tuleap\Http\Server\DisableCacheMiddleware;
 use Tuleap\Http\Server\RejectNonHTTPSRequestMiddleware;
 use Tuleap\Http\Server\ServiceInstrumentationMiddleware;
+use Tuleap\Layout\Feedback\FeedbackSerializer;
 use Tuleap\MediawikiStandalone\Configuration\GenerateLocalSettingsCommand;
 use Tuleap\MediawikiStandalone\Configuration\LocalSettingsFactory;
 use Tuleap\MediawikiStandalone\Configuration\LocalSettingsInstantiator;
@@ -59,6 +67,20 @@ use Tuleap\MediawikiStandalone\Instance\ProjectRenameHandler;
 use Tuleap\MediawikiStandalone\Instance\ProjectStatusHandler;
 use Tuleap\MediawikiStandalone\OAuth2\MediawikiStandaloneOAuth2ConsentChecker;
 use Tuleap\MediawikiStandalone\OAuth2\RejectAuthorizationRequiringConsent;
+use Tuleap\MediawikiStandalone\Permissions\Admin\AdminPermissionsController;
+use Tuleap\MediawikiStandalone\Permissions\Admin\AdminPermissionsPresenterBuilder;
+use Tuleap\MediawikiStandalone\Permissions\Admin\AdminSavePermissionsController;
+use Tuleap\MediawikiStandalone\Permissions\Admin\CSRFSynchronizerTokenProvider;
+use Tuleap\MediawikiStandalone\Permissions\Admin\PermissionPerGroupServicePaneBuilder;
+use Tuleap\MediawikiStandalone\Permissions\Admin\ProjectPermissionsSaver;
+use Tuleap\MediawikiStandalone\Permissions\Admin\RejectNonMediawikiAdministratorMiddleware;
+use Tuleap\MediawikiStandalone\Permissions\Admin\UserGroupToSaveRetriever;
+use Tuleap\MediawikiStandalone\Permissions\ForgeUserGroupPermission\MediawikiAdminAllProjects;
+use Tuleap\MediawikiStandalone\Permissions\MediawikiPermissionsDao;
+use Tuleap\MediawikiStandalone\Permissions\PermissionsFollowingSiteAccessChangeUpdater;
+use Tuleap\MediawikiStandalone\Permissions\ProjectPermissionsRetriever;
+use Tuleap\MediawikiStandalone\Permissions\RestrictedUserCanAccessMediaWikiVerifier;
+use Tuleap\MediawikiStandalone\Permissions\UserPermissionsBuilder;
 use Tuleap\MediawikiStandalone\REST\MediawikiStandaloneResourcesInjector;
 use Tuleap\MediawikiStandalone\REST\OAuth2\OAuth2MediawikiStandaloneReadScope;
 use Tuleap\MediawikiStandalone\Service\MediawikiFlavorUsageDao;
@@ -68,6 +90,8 @@ use Tuleap\MediawikiStandalone\Service\ServiceActivationHandler;
 use Tuleap\MediawikiStandalone\Service\ServiceAvailabilityHandler;
 use Tuleap\MediawikiStandalone\Service\ServiceAvailabilityProjectServiceBeforeAvailabilityEvent;
 use Tuleap\MediawikiStandalone\Service\ServiceAvailabilityServiceDisabledCollectorEvent;
+use Tuleap\MediawikiStandalone\XML\XMLMediaWikiExporter;
+use Tuleap\MediawikiStandalone\XML\XMLMediaWikiImporter;
 use Tuleap\OAuth2ServerCore\App\AppDao;
 use Tuleap\OAuth2ServerCore\App\AppFactory;
 use Tuleap\OAuth2ServerCore\App\AppMatchingClientIDFilterAppTypeRetriever;
@@ -87,21 +111,29 @@ use Tuleap\OAuth2ServerCore\OpenIDConnect\Scope\OpenIDConnectProfileScope;
 use Tuleap\OAuth2ServerCore\Scope\OAuth2ScopeSaver;
 use Tuleap\OAuth2ServerCore\Scope\ScopeExtractor;
 use Tuleap\PluginsAdministration\LifecycleHookCommand\PluginExecuteUpdateHookEvent;
+use Tuleap\Project\Admin\History\GetHistoryKeyLabel;
+use Tuleap\Project\Admin\Navigation\NavigationDropdownItemPresenter;
+use Tuleap\Project\Admin\Navigation\NavigationDropdownQuickLinksCollector;
+use Tuleap\Project\Admin\PermissionsPerGroup\PermissionPerGroupPaneCollector;
+use Tuleap\Project\Admin\PermissionsPerGroup\PermissionPerGroupUGroupFormatter;
 use Tuleap\Project\Event\ProjectServiceBeforeActivation;
+use Tuleap\Project\ProjectAccessChecker;
 use Tuleap\Project\Registration\RegisterProjectCreationEvent;
+use Tuleap\Project\Routing\ProjectByNameRetrieverMiddleware;
 use Tuleap\Project\Service\PluginAddMissingServiceTrait;
 use Tuleap\Project\Service\PluginWithService;
 use Tuleap\Project\Service\ServiceDisabledCollector;
 use Tuleap\Queue\EnqueueTask;
 use Tuleap\Queue\WorkerEvent;
 use Tuleap\Request\CollectRoutesEvent;
+use Tuleap\Request\ProjectRetriever;
 use Tuleap\Templating\TemplateCache;
 use Tuleap\User\OAuth2\Scope\CoreOAuth2ScopeBuilderFactory;
 use Tuleap\User\OAuth2\Scope\OAuth2ProjectReadScope;
 use Tuleap\User\OAuth2\Scope\OAuth2ScopeBuilderCollector;
+use Tuleap\User\User_ForgeUserGroupPermissionsFactory;
 
 require_once __DIR__ . '/../vendor/autoload.php';
-require_once __DIR__ . '/../../mediawiki/vendor/autoload.php';
 
 // phpcs:ignore PSR1.Classes.ClassDeclaration.MissingNamespace,Squiz.Classes.ValidClassName.NotCamelCaps
 final class mediawiki_standalonePlugin extends Plugin implements PluginWithService, PluginWithConfigKeys
@@ -131,18 +163,17 @@ final class mediawiki_standalonePlugin extends Plugin implements PluginWithServi
         return $this->pluginInfo;
     }
 
-    public function getDependencies(): array
-    {
-        return ['mediawiki'];
-    }
-
     public function getInstallRequirements(): array
     {
-        return [new \Tuleap\Plugin\MandatoryAsyncWorkerSetupPluginInstallRequirement(new \Tuleap\Queue\WorkerAvailability())];
+        return [new \Tuleap\Plugin\MandatoryAsyncWorkerSetupPluginInstallRequirement(
+            new \Tuleap\Queue\WorkerAvailability()
+        ),
+        ];
     }
 
     public function getHooksAndCallbacks(): Collection
     {
+        $this->addHook(PermissionPerGroupPaneCollector::NAME);
         $this->addHook(CollectRoutesEvent::NAME);
         $this->addHook(Event::REST_RESOURCES);
         $this->addHook(OAuth2ScopeBuilderCollector::NAME);
@@ -157,8 +188,126 @@ final class mediawiki_standalonePlugin extends Plugin implements PluginWithServi
         $this->addHook(Event::PROJECT_RENAME);
         $this->addHook(Event::GET_SERVICES_ALLOWED_FOR_RESTRICTED);
         $this->addHook(Event::USER_MANAGER_UPDATE_DB);
+        $this->addHook(NavigationDropdownQuickLinksCollector::NAME);
+        $this->addHook(GetHistoryKeyLabel::NAME);
+        $this->addHook('fill_project_history_sub_events', 'fillProjectHistorySubEvents', false);
+        $this->addHook(ExportXmlProject::NAME);
+        $this->addHook(Event::IMPORT_XML_PROJECT);
+        $this->addHook(User_ForgeUserGroupPermissionsFactory::GET_PERMISSION_DELEGATION);
+        $this->addHook(ForgeUserGroupDeletedEvent::NAME);
+        $this->addHook(PermissionDelegationsAddedToForgeUserGroupEvent::NAME);
+        $this->addHook(PermissionDelegationsRemovedForForgeUserGroupEvent::NAME);
+        $this->addHook(UserAddedToForgeUserGroupEvent::NAME);
+        $this->addHook(UsersRemovedFromForgeUserGroupEvent::NAME);
 
         return parent::getHooksAndCallbacks();
+    }
+
+    public function forgeUserGroupDeletedEvent(ForgeUserGroupDeletedEvent $event): void
+    {
+        $this->logsForgeUserGroupMembersOutOfAllProjects($event->getUserGroup());
+    }
+
+    public function permissionDelegationsAddedToForgeUserGroupEvent(PermissionDelegationsAddedToForgeUserGroupEvent $event): void
+    {
+        foreach ($event->getPermissions() as $permission) {
+            if ($permission->getId() === MediawikiAdminAllProjects::ID) {
+                $this->logsForgeUserGroupMembersOutOfAllProjects($event->getUserGroup());
+                break;
+            }
+        }
+    }
+
+    public function permissionDelegationsRemovedForForgeUserGroupEvent(PermissionDelegationsRemovedForForgeUserGroupEvent $event): void
+    {
+        foreach ($event->getPermissions() as $permission) {
+            if ($permission->getId() === MediawikiAdminAllProjects::ID) {
+                $this->logsForgeUserGroupMembersOutOfAllProjects($event->getUserGroup());
+                break;
+            }
+        }
+    }
+
+    private function logsForgeUserGroupMembersOutOfAllProjects(\User_ForgeUGroup $user_group): void
+    {
+        $enqueue_task = new EnqueueTask();
+        $users        = (new User_ForgeUserGroupUsersFactory(new User_ForgeUserGroupUsersDao()))->getAllUsersFromForgeUserGroup($user_group);
+        foreach ($users as $user) {
+            $enqueue_task->enqueue(
+                LogUsersOutInstanceTask::logsSpecificUserOutOfAllProjects((int) $user->getId())
+            );
+        }
+    }
+
+    public function userAddedToForgeUserGroupEvent(UserAddedToForgeUserGroupEvent $event): void
+    {
+        (new EnqueueTask())->enqueue(
+            LogUsersOutInstanceTask::logsSpecificUserOutOfAllProjects((int) $event->getUser()->getId())
+        );
+    }
+
+    public function usersRemovedFromForgeUserGroupEvent(UsersRemovedFromForgeUserGroupEvent $event): void
+    {
+        $enqueue_task = new EnqueueTask();
+        foreach ($event->getUsers() as $user) {
+            $enqueue_task->enqueue(
+                LogUsersOutInstanceTask::logsSpecificUserOutOfAllProjects((int) $user->getId())
+            );
+        }
+    }
+
+    public function getPermissionDelegation(array $params): void
+    {
+        $params['plugins_permission'][MediawikiAdminAllProjects::ID] = new MediawikiAdminAllProjects();
+    }
+
+    public function exportXmlProject(ExportXmlProject $event): void
+    {
+        if (! $this->isAllowed($event->getProject()->getID())) {
+            return;
+        }
+
+        $service = $event->getProject()->getService(MediawikiStandaloneService::SERVICE_SHORTNAME);
+        if (! $service instanceof MediawikiStandaloneService) {
+            return;
+        }
+
+        $dao = new MediawikiPermissionsDao();
+        (new XMLMediaWikiExporter(
+            new WrapperLogger($event->getLogger(), 'MediaWiki Standalone'),
+            new ProjectPermissionsRetriever($dao),
+            new UGroupManager(),
+        ))->exportToXml(
+            $event->getProject(),
+            $event->getIntoXml(),
+        );
+    }
+
+    /**
+     * @see Event::IMPORT_XML_PROJECT
+     */
+    public function importXmlProject(array $params): void
+    {
+        $importer = new XMLMediaWikiImporter(
+            new WrapperLogger($params['logger'], 'MediaWiki Standalone'),
+            new UGroupManager(),
+            new MediawikiPermissionsDao(),
+        );
+
+        $importer->import($params['project'], $params['xml_content']);
+    }
+
+    public function getHistoryKeyLabel(GetHistoryKeyLabel $event): void
+    {
+        $label = ProjectPermissionsSaver::getLabelFromKey($event->getKey());
+        if ($label) {
+            $event->setLabel($label);
+        }
+    }
+
+    public function fillProjectHistorySubEvents(array $params): void
+    {
+        ProjectPermissionsSaver::fillProjectHistorySubEvents($params);
     }
 
     public function getServiceShortname(): string
@@ -200,21 +349,33 @@ final class mediawiki_standalonePlugin extends Plugin implements PluginWithServi
         (new ServiceActivationHandler(new EnqueueTask()))->handle(
             ServiceActivationEvent::fromRegisterProjectCreationEvent($event)
         );
+        if ($event->shouldProjectInheritFromTemplate()) {
+            (new MediawikiPermissionsDao())->duplicateProjectPermissions(
+                $event->getTemplateProject(),
+                $event->getJustCreatedProject(),
+                $event->getMappingRegistry()->getUgroupMapping()
+            );
+        }
     }
 
     public function projectServiceBeforeActivation(ProjectServiceBeforeActivation $event): void
     {
-        (new ServiceAvailabilityHandler(new MediawikiFlavorUsageDao()))->handle(new ServiceAvailabilityProjectServiceBeforeAvailabilityEvent($event));
+        (new ServiceAvailabilityHandler(new MediawikiFlavorUsageDao()))->handle(
+            new ServiceAvailabilityProjectServiceBeforeAvailabilityEvent($event)
+        );
     }
 
     public function serviceDisabledCollector(ServiceDisabledCollector $event): void
     {
-        (new ServiceAvailabilityHandler(new MediawikiFlavorUsageDao()))->handle(new ServiceAvailabilityServiceDisabledCollectorEvent($event));
+        (new ServiceAvailabilityHandler(new MediawikiFlavorUsageDao()))->handle(
+            new ServiceAvailabilityServiceDisabledCollectorEvent($event)
+        );
     }
 
     /**
-     * @see Event::PROJECT_ACCESS_CHANGE
      * @param array{project_id: int} $params
+     *
+     * @see Event::PROJECT_ACCESS_CHANGE
      */
     public function projectAccessChange(array $params): void
     {
@@ -255,20 +416,22 @@ final class mediawiki_standalonePlugin extends Plugin implements PluginWithServi
             (int) $params['new_user']->getId(),
         );
 
-        if ($task !== null) {
-            (new EnqueueTask())->enqueue($task);
-        }
+        (new EnqueueTask())->enqueue($task);
     }
 
     /**
-     * @see Event::SITE_ACCESS_CHANGE
      * @param array{old_value: \ForgeAccess::ANONYMOUS|\ForgeAccess::REGULAR|\ForgeAccess::RESTRICTED, new_value: \ForgeAccess::ANONYMOUS|\ForgeAccess::REGULAR|\ForgeAccess::RESTRICTED} $params
+     *
+     * @see Event::SITE_ACCESS_CHANGE
      */
     public function siteAccessChange(array $params): void
     {
         (new \Tuleap\MediawikiStandalone\Instance\SiteAccessHandler(
             new EnqueueTask()
         ))->process();
+
+        (new PermissionsFollowingSiteAccessChangeUpdater(new MediawikiPermissionsDao()))
+            ->updatePermissionsFollowingSiteAccessChange($params['old_value']);
     }
 
     public function projectStatusUpdate(ProjectStatusUpdate $event): void
@@ -334,7 +497,91 @@ final class mediawiki_standalonePlugin extends Plugin implements PluginWithServi
     {
         $route_collector = $event->getRouteCollector();
 
-        $route_collector->addRoute(['GET', 'POST'], '/mediawiki_standalone/oauth2_authorize', $this->getRouteHandler('routeAuthorizationEndpoint'));
+        $route_collector->addRoute(
+            ['GET', 'POST'],
+            '/mediawiki_standalone/oauth2_authorize',
+            $this->getRouteHandler('routeAuthorizationEndpoint')
+        );
+        $route_collector->addRoute(
+            'GET',
+            '/mediawiki_standalone/admin/{' . AdminPermissionsController::PROJECT_NAME_VARIABLE_NAME . '}/permissions',
+            $this->getRouteHandler('routeAdminProjectPermissions')
+        );
+        $route_collector->addRoute(
+            'POST',
+            '/mediawiki_standalone/admin/{' . AdminPermissionsController::PROJECT_NAME_VARIABLE_NAME . '}/permissions',
+            $this->getRouteHandler('routeAdminSaveProjectPermissions')
+        );
+    }
+
+    public function routeAdminSaveProjectPermissions(): \Tuleap\Request\DispatchableWithRequest
+    {
+        $dao = new MediawikiPermissionsDao();
+
+        return new AdminSavePermissionsController(
+            new ProjectPermissionsSaver(
+                $dao,
+                new ProjectHistoryDao(),
+                new EnqueueTask(),
+            ),
+            new UserGroupToSaveRetriever(new UGroupManager()),
+            new RedirectWithFeedbackFactory(
+                HTTPFactoryBuilder::responseFactory(),
+                new FeedbackSerializer(new FeedbackDao())
+            ),
+            new CSRFSynchronizerTokenProvider(),
+            new SapiEmitter(),
+            new ServiceInstrumentationMiddleware(MediawikiStandaloneService::SERVICE_SHORTNAME),
+            new ProjectByNameRetrieverMiddleware(ProjectRetriever::buildSelf()),
+            new RejectNonMediawikiAdministratorMiddleware(
+                UserManager::instance(),
+                new UserPermissionsBuilder(
+                    new \User_ForgeUserGroupPermissionsManager(
+                        new \User_ForgeUserGroupPermissionsDao()
+                    ),
+                    new ProjectAccessChecker(
+                        new RestrictedUserCanAccessMediaWikiVerifier(),
+                        \EventManager::instance(),
+                    ),
+                    new ProjectPermissionsRetriever($dao)
+                ),
+            )
+        );
+    }
+
+    public function routeAdminProjectPermissions(): \Tuleap\Request\DispatchableWithRequest
+    {
+        $dao = new MediawikiPermissionsDao();
+
+        $permissions_retriever = new ProjectPermissionsRetriever($dao);
+
+        return new AdminPermissionsController(
+            HTTPFactoryBuilder::responseFactory(),
+            HTTPFactoryBuilder::streamFactory(),
+            $this,
+            TemplateRendererFactory::build(),
+            new CSRFSynchronizerTokenProvider(),
+            new AdminPermissionsPresenterBuilder(
+                $permissions_retriever,
+                new User_ForgeUserGroupFactory(new UserGroupDao()),
+            ),
+            new SapiEmitter(),
+            new ServiceInstrumentationMiddleware(MediawikiStandaloneService::SERVICE_SHORTNAME),
+            new ProjectByNameRetrieverMiddleware(ProjectRetriever::buildSelf()),
+            new RejectNonMediawikiAdministratorMiddleware(
+                UserManager::instance(),
+                new UserPermissionsBuilder(
+                    new \User_ForgeUserGroupPermissionsManager(
+                        new \User_ForgeUserGroupPermissionsDao()
+                    ),
+                    new ProjectAccessChecker(
+                        new RestrictedUserCanAccessMediaWikiVerifier(),
+                        \EventManager::instance(),
+                    ),
+                    $permissions_retriever,
+                ),
+            )
+        );
     }
 
     public function routeAuthorizationEndpoint(): \Tuleap\Request\DispatchableWithRequest
@@ -346,7 +593,10 @@ final class mediawiki_standalonePlugin extends Plugin implements PluginWithServi
         $url_redirect               = new \URLRedirect(\EventManager::instance());
         $scope_builder              = AggregateAuthenticationScopeBuilder::fromBuildersList(
             CoreOAuth2ScopeBuilderFactory::buildCoreOAuth2ScopeBuilder(),
-            AggregateAuthenticationScopeBuilder::fromEventDispatcher(\EventManager::instance(), new OAuth2ScopeBuilderCollector())
+            AggregateAuthenticationScopeBuilder::fromEventDispatcher(
+                \EventManager::instance(),
+                new OAuth2ScopeBuilderCollector()
+            )
         );
         $authorization_code_creator = new OAuth2AuthorizationCodeCreator(
             new PrefixedSplitTokenSerializer(new PrefixOAuth2AuthCode()),
@@ -358,6 +608,7 @@ final class mediawiki_standalonePlugin extends Plugin implements PluginWithServi
         );
 
         $logger = \Tuleap\OAuth2ServerCore\OAuth2ServerRoutes::getOAuth2ServerLogger();
+
         return new AuthorizationEndpointController(
             new RejectAuthorizationRequiringConsent(
                 new AuthorizationCodeResponseFactory(
@@ -443,8 +694,10 @@ final class mediawiki_standalonePlugin extends Plugin implements PluginWithServi
 
     private function buildUpdateScriptCaller(\Psr\Log\LoggerInterface $logger): MediaWikiInstallAndUpdateScriptCaller
     {
+        $settings_directory_path = $this->buildSettingDirectoryPath();
         return new MediaWikiInstallAndUpdateScriptCaller(
-            new MediaWikiManagementCommandProcessFactory($logger, $this->buildSettingDirectoryPath()),
+            new MediaWikiManagementCommandProcessFactory($logger, $settings_directory_path),
+            new \Tuleap\MediawikiStandalone\Configuration\MainpageDeployer($settings_directory_path),
             $this->buildLocalSettingsInstantiator(),
             new ProjectMediaWikiServiceDAO(),
             $logger
@@ -455,6 +708,7 @@ final class mediawiki_standalonePlugin extends Plugin implements PluginWithServi
     {
         $transaction_executor = new DBTransactionExecutorWithConnection(DBFactory::getMainTuleapDBConnection());
         $hasher               = new SplitTokenVerificationStringHasher();
+
         return new LocalSettingsInstantiator(
             new LocalSettingsFactory(
                 new MediaWikiOAuth2AppSecretGeneratorDBStore(
@@ -478,5 +732,59 @@ final class mediawiki_standalonePlugin extends Plugin implements PluginWithServi
     private function buildSettingDirectoryPath(): string
     {
         return ForgeConfig::get('sys_custompluginsroot') . '/' . $this->getName();
+    }
+
+    public function collectProjectAdminNavigationPermissionDropdownQuickLinks(
+        NavigationDropdownQuickLinksCollector $quick_links_collector,
+    ): void {
+        $project = $quick_links_collector->getProject();
+        $service = $project->getService(MediawikiStandaloneService::SERVICE_SHORTNAME);
+        if (! $service instanceof MediawikiStandaloneService) {
+            return;
+        }
+
+        if (! $this->isAllowed($project->getID())) {
+            return;
+        }
+
+        $quick_links_collector->addQuickLink(
+            new NavigationDropdownItemPresenter(
+                dgettext('tuleap-mediawiki_standalone', 'MediaWiki Standalone'),
+                AdminPermissionsController::getAdminUrl($project),
+            )
+        );
+    }
+
+    public function permissionPerGroupPaneCollector(PermissionPerGroupPaneCollector $event): void
+    {
+        $project = $event->getProject();
+        $service = $project->getService(MediawikiStandaloneService::SERVICE_SHORTNAME);
+        if (! $service instanceof MediawikiStandaloneService) {
+            return;
+        }
+
+        if (! $this->isAllowed($project->getID())) {
+            return;
+        }
+
+        $ugroup_manager = new UGroupManager();
+
+        $dao                  = new MediawikiPermissionsDao();
+        $service_pane_builder = new PermissionPerGroupServicePaneBuilder(
+            new PermissionPerGroupUGroupFormatter($ugroup_manager),
+            new ProjectPermissionsRetriever($dao),
+            $ugroup_manager,
+        );
+
+        $template_factory      = TemplateRendererFactory::build();
+        $admin_permission_pane = $template_factory
+            ->getRenderer(__DIR__ . '/../templates')
+            ->renderToString(
+                'project-admin-permission-per-group',
+                $service_pane_builder->buildPresenter($event)
+            );
+
+        $rank_in_project = $service->getRank();
+        $event->addPane($admin_permission_pane, $rank_in_project);
     }
 }

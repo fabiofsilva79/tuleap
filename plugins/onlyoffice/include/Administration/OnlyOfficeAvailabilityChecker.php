@@ -23,30 +23,28 @@ declare(strict_types=1);
 namespace Tuleap\OnlyOffice\Administration;
 
 use Psr\Log\LoggerInterface;
+use Tuleap\OnlyOffice\DocumentServer\IRetrieveDocumentServers;
 
 final class OnlyOfficeAvailabilityChecker implements CheckOnlyOfficeIsAvailable
 {
     public function __construct(
-        private \PluginManager $plugin_manager,
-        private \onlyofficePlugin $onlyoffice_plugin,
         private LoggerInterface $logger,
+        private IRetrieveDocumentServers $servers_retriever,
     ) {
     }
 
     public function isOnlyOfficeIntegrationAvailableForProject(\Project $project): bool
     {
-        if (! \ForgeConfig::get(OnlyOfficeDocumentServerSettings::URL, '')) {
-            $this->logger->debug(
-                sprintf('Settings %s does not seem to be defined', OnlyOfficeDocumentServerSettings::URL)
-            );
-
-            return false;
+        $servers                     = $this->servers_retriever->retrieveAll();
+        $server_with_existing_secret = false;
+        foreach ($servers as $server) {
+            if ($server->url && $server->has_existing_secret) {
+                $server_with_existing_secret = true;
+            }
         }
 
-        if (! \ForgeConfig::exists(OnlyOfficeDocumentServerSettings::SECRET)) {
-            $this->logger->debug(
-                sprintf('Settings %s does not seem to be defined', OnlyOfficeDocumentServerSettings::SECRET)
-            );
+        if (! $server_with_existing_secret) {
+            $this->logger->debug('No document server with existing secret key has been defined');
 
             return false;
         }
@@ -55,10 +53,12 @@ final class OnlyOfficeAvailabilityChecker implements CheckOnlyOfficeIsAvailable
             return false;
         }
 
-        if (! $this->plugin_manager->isPluginAllowedForProject($this->onlyoffice_plugin, (int) $project->getID())) {
-            return false;
+        foreach ($servers as $server) {
+            if ($server->isProjectAllowed($project)) {
+                return true;
+            }
         }
 
-        return true;
+        return false;
     }
 }

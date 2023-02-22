@@ -18,13 +18,13 @@
  */
 
 import CodeMirror from "codemirror";
-import { getStore } from "../comments-store.ts";
-import { getCollapsibleCodeSections } from "../../code-collapse/collaspible-code-sections-builder.ts";
+import { getStore } from "../editors/comments-store.ts";
+import { getCollapsibleCodeSections } from "../code-collapse/collaspible-code-sections-builder.ts";
 
-import "./modes.ts";
+import "../editors/modes.ts";
 import { INLINE_COMMENT_POSITION_RIGHT, INLINE_COMMENT_POSITION_LEFT } from "../../comments/types";
-import { getCodeMirrorConfigurationToMakePotentiallyDangerousBidirectionalCharactersVisible } from "../diff-bidirectional-unicode-text";
-import { SideBySideCodeMirrorWidgetCreator } from "./side-by-side-code-mirror-widget-creator";
+import { getCodeMirrorConfigurationToMakePotentiallyDangerousBidirectionalCharactersVisible } from "../editors/diff-bidirectional-unicode-text";
+import { SideBySideCodeMirrorWidgetCreator } from "../widgets/SideBySideCodeMirrorWidgetCreator";
 import { RelativeDateHelper } from "../../helpers/date-helpers";
 import { PullRequestPresenter } from "../../comments/PullRequestPresenter";
 import { PullRequestCurrentUserPresenter } from "../../comments/PullRequestCurrentUserPresenter";
@@ -32,6 +32,9 @@ import { NewInlineCommentContext } from "../../comments/new-comment-form/NewInli
 import { PullRequestCommentController } from "../../comments/PullRequestCommentController";
 import { PullRequestCommentReplyFormFocusHelper } from "../../comments/PullRequestCommentReplyFormFocusHelper";
 import { PullRequestCommentNewReplySaver } from "../../comments/PullRequestCommentReplySaver";
+import { FileDiffCommentScroller } from "../scroll-to-comment/FileDiffCommentScroller";
+import { FileDiffCommentWidgetsMap } from "../scroll-to-comment/FileDiffCommentWidgetsMap";
+import { collapseCommonSectionsUnidiff } from "../code-collapse/code-mirror-common-sections-collapse";
 
 export default {
     template: `<div class="pull-request-unidiff" resize></div>`,
@@ -40,28 +43,19 @@ export default {
         diff: "<",
         filePath: "@",
         pullRequestId: "@",
+        commentId: "@",
     },
 };
 
-controller.$inject = [
-    "$element",
-    "$scope",
-    "FileDiffRestService",
-    "CodeMirrorHelperService",
-    "SharedPropertiesService",
-];
+controller.$inject = ["$element", "$scope", "SharedPropertiesService"];
 
-function controller(
-    $element,
-    $scope,
-    FileDiffRestService,
-    CodeMirrorHelperService,
-    SharedPropertiesService
-) {
+function controller($element, $scope, SharedPropertiesService) {
     const self = this;
 
     const GUTTER_NEWLINES = "gutter-newlines";
     const GUTTER_OLDLINES = "gutter-oldlines";
+
+    const comment_widgets_map = FileDiffCommentWidgetsMap();
 
     Object.assign(self, {
         $onInit,
@@ -75,14 +69,15 @@ function controller(
             PullRequestCommentController(
                 PullRequestCommentReplyFormFocusHelper(),
                 getStore(),
-                PullRequestCommentNewReplySaver()
+                PullRequestCommentNewReplySaver(),
+                PullRequestCurrentUserPresenter.fromUserInfo(
+                    SharedPropertiesService.getUserId(),
+                    SharedPropertiesService.getUserAvatarUrl()
+                ),
+                PullRequestPresenter.fromPullRequest(SharedPropertiesService.getPullRequest())
             ),
             getStore(),
-            PullRequestPresenter.fromPullRequest(SharedPropertiesService.getPullRequest()),
-            PullRequestCurrentUserPresenter.fromUserInfo(
-                SharedPropertiesService.getUserId(),
-                SharedPropertiesService.getUserAvatarUrl()
-            )
+            comment_widgets_map
         ),
     });
 
@@ -105,10 +100,7 @@ function controller(
             getStore().getAllRootComments()
         );
 
-        CodeMirrorHelperService.collapseCommonSectionsUnidiff(
-            unidiff_codemirror,
-            collapsible_sections
-        );
+        collapseCommonSectionsUnidiff(document, unidiff_codemirror, collapsible_sections);
 
         getStore()
             .getAllRootComments()
@@ -124,6 +116,12 @@ function controller(
             });
 
         unidiff_codemirror.on("gutterClick", addNewComment);
+
+        FileDiffCommentScroller(
+            getStore(),
+            self.diff.lines,
+            comment_widgets_map
+        ).scrollToUnifiedDiffComment(self.commentId, unidiff_codemirror);
     }
 
     function getCommentPosition(line_number, gutter) {
@@ -134,8 +132,12 @@ function controller(
             : INLINE_COMMENT_POSITION_RIGHT;
     }
 
-    function addNewComment(code_mirror, line_number, gutter) {
-        const comment_position = getCommentPosition(line_number, gutter);
+    function addNewComment(code_mirror, line_number, gutter_class, event) {
+        if (event.target.classList.contains(gutter_class)) {
+            return;
+        }
+
+        const comment_position = getCommentPosition(line_number, gutter_class);
 
         self.widget_creator.displayNewInlineCommentFormWidget({
             code_mirror,

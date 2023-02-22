@@ -26,28 +26,42 @@ use Tuleap\Project\MappingRegistry;
 use Tuleap\Tracker\Admin\GlobalAdmin\ArtifactLinks\ArtifactLinksController;
 
 //phpcs:ignore PSR1.Classes.ClassDeclaration.MissingNamespace
-class TrackerManagerTest extends \Tuleap\Test\PHPUnit\TestCase
+final class TrackerManagerTest extends \Tuleap\Test\PHPUnit\TestCase
 {
     use MockeryPHPUnitIntegration;
     use GlobalLanguageMock;
     use GlobalResponseMock;
 
     private $tracker;
-
+    private PFUser $user;
     /**
-     * @var array
+     * @var Tracker_URL&\Mockery\MockInterface
      */
-    private $backup_globals;
+    private $url;
+    /**
+     * @var \Tuleap\Tracker\Artifact\Artifact&\Mockery\MockInterface
+     */
+    private $artifact;
+    /**
+     * @var Tracker_Report&\Mockery\MockInterface
+     */
+    private $report;
+    /**
+     * @var Tracker_FormElement_Interface&\Mockery\MockInterface
+     */
+    private $formElement;
+    /**
+     * @var \Mockery\MockInterface&TrackerManager
+     */
+    private $tm;
 
     protected function setUp(): void
     {
         parent::setUp();
 
-        $this->backup_globals = array_merge([], $GLOBALS);
-        $GLOBALS['HTML']      = Mockery::spy(\Layout::class);
+        $GLOBALS['HTML'] = Mockery::spy(\Layout::class);
 
-        $this->user = \Mockery::spy(\PFUser::class);
-        $this->user->shouldReceive('getId')->andReturns(666);
+        $this->user = \Tuleap\Test\Builders\UserTestBuilder::aUser()->withId(666)->build();
 
         $this->url = \Mockery::spy(\Tracker_URL::class);
 
@@ -92,8 +106,7 @@ class TrackerManagerTest extends \Tuleap\Test\PHPUnit\TestCase
 
     protected function tearDown(): void
     {
-        unset($GLOBALS['group_id']);
-        $GLOBALS = $this->backup_globals;
+        unset($GLOBALS['group_id'], $GLOBALS['HTML']);
 
         parent::tearDown();
     }

@@ -21,7 +21,7 @@ import "./tuleap-artifact-modal.tpl.html";
 import TuleapArtifactModalController from "./tuleap-artifact-modal-controller.js";
 
 import _ from "lodash";
-import { isInCreationMode, setCreationMode } from "./modal-creation-mode-state.js";
+import { isInCreationMode, setCreationMode } from "./modal-creation-mode-state.ts";
 import {
     getArtifactWithCompleteTrackerStructure,
     getTracker,
@@ -33,10 +33,6 @@ import { buildFormTree } from "./model/form-tree-builder.js";
 import { enforceWorkflowTransitions } from "./model/workflow-field-values-filter.js";
 import { isValidTextFormat, TEXT_FORMAT_COMMONMARK } from "@tuleap/plugin-tracker-constants";
 import { setTextFieldDefaultFormat } from "./model/UserPreferencesStore";
-import {
-    getTargetFieldPossibleValues,
-    setUpFieldDependenciesActions,
-} from "./field-dependencies-helper.js";
 import { getSelectedValues } from "./model/field-values-formatter.js";
 import { addFieldValuesToTracker, transform } from "./model/tracker-transformer.js";
 import { setTrackerFields } from "./model/FirstFileFieldStore";
@@ -64,8 +60,6 @@ function ArtifactModalService($q, TlpModalService, TuleapArtifactModalLoading) {
      * @param {int} tracker_id               The tracker to which the item we want to add/edit belongs
      * @param {int} parent_artifact_id       The artifact's parent's id
      * @param {function} displayItemCallback The function to call after receiving the last HTTP response. It will be called with the new artifact's id.
-     * @param {boolean} is_list_picker_enabled  Enable the new list picker or not. Currently it is behind a feature flag. (To be removed when the feature flag will be removed)
-     * @param {boolean} is_search_enabled Enable picking artifact links from history and search results. (To be removed when the feature flag is removed)
      * @param {array} prefill_values         The prefill values for creation, using field name as identifier
      */
     function showCreation(
@@ -73,8 +67,6 @@ function ArtifactModalService($q, TlpModalService, TuleapArtifactModalLoading) {
         tracker_id,
         parent_artifact_id,
         displayItemCallback,
-        is_list_picker_enabled = false,
-        is_search_enabled = false,
         prefill_values
     ) {
         TuleapArtifactModalLoading.loading = true;
@@ -89,8 +81,6 @@ function ArtifactModalService($q, TlpModalService, TuleapArtifactModalLoading) {
                     user_id,
                     tracker_id,
                     parent_artifact_id,
-                    is_list_picker_enabled,
-                    is_search_enabled,
                     prefill_values
                 ),
                 displayItemCallback: displayItemCallback ? displayItemCallback : _.noop,
@@ -108,17 +98,8 @@ function ArtifactModalService($q, TlpModalService, TuleapArtifactModalLoading) {
      * @param {int} tracker_id               The tracker to which the item we want to add/edit belongs
      * @param {int} artifact_id              The id of the artifact we want to edit
      * @param {function} displayItemCallback The function to call after receiving the last HTTP response. It will be called with the edited artifact's id.
-     * @param {boolean} is_list_picker_enabled  Enable the new list picker or not. Currently it is behind a feature flag. (To be removed when the feature flag will be removed)
-     * @param {boolean} is_search_enabled Enable picking artifact links from history and search results. (To be removed when the feature flag is removed)
      */
-    function showEdition(
-        user_id,
-        tracker_id,
-        artifact_id,
-        displayItemCallback,
-        is_list_picker_enabled = false,
-        is_search_enabled = false
-    ) {
+    function showEdition(user_id, tracker_id, artifact_id, displayItemCallback) {
         TuleapArtifactModalLoading.loading = true;
 
         return TlpModalService.open({
@@ -127,32 +108,19 @@ function ArtifactModalService($q, TlpModalService, TuleapArtifactModalLoading) {
             controllerAs: "modal",
             tlpModalOptions: { keyboard: false, destroy_on_hide: true },
             resolve: {
-                modal_model: self.initEditionModalModel(
-                    user_id,
-                    tracker_id,
-                    artifact_id,
-                    is_list_picker_enabled,
-                    is_search_enabled
-                ),
+                modal_model: self.initEditionModalModel(user_id, tracker_id, artifact_id),
                 displayItemCallback: displayItemCallback ? displayItemCallback : _.noop,
             },
         });
     }
 
-    function initCreationModalModel(
-        user_id,
-        tracker_id,
-        parent_artifact_id,
-        is_list_picker_enabled,
-        is_search_enabled,
-        prefill_values
-    ) {
+    function initCreationModalModel(user_id, tracker_id, parent_artifact_id, prefill_values) {
         const modal_model = {
             user_id,
             tracker_id,
             parent_artifact_id,
-            is_list_picker_enabled,
-            is_search_enabled,
+            user_date_time_format: document.body.dataset.dateTimeFormat,
+            user_locale: document.body.dataset.userLocale,
         };
 
         const creation_mode = true;
@@ -172,7 +140,6 @@ function ArtifactModalService($q, TlpModalService, TuleapArtifactModalLoading) {
                 );
                 applyWorkflowTransitions(transformed_tracker, {});
                 modal_model.values = getSelectedValues(initial_values, transformed_tracker);
-                applyFieldDependencies(transformed_tracker, modal_model.values);
                 modal_model.ordered_fields = buildFormTree(transformed_tracker);
 
                 const file_upload_rules_promise = $q.when(
@@ -188,19 +155,13 @@ function ArtifactModalService($q, TlpModalService, TuleapArtifactModalLoading) {
         return promise;
     }
 
-    function initEditionModalModel(
-        user_id,
-        tracker_id,
-        artifact_id,
-        is_list_picker_enabled,
-        is_search_enabled
-    ) {
+    function initEditionModalModel(user_id, tracker_id, artifact_id) {
         const modal_model = {
             user_id,
             tracker_id,
             artifact_id,
-            is_list_picker_enabled,
-            is_search_enabled,
+            user_date_time_format: document.body.dataset.dateTimeFormat,
+            user_locale: document.body.dataset.userLocale,
         };
 
         const creation_mode = false;
@@ -233,8 +194,6 @@ function ArtifactModalService($q, TlpModalService, TuleapArtifactModalLoading) {
                 modal_model.etag = promises[0].Etag;
                 modal_model.last_modified = promises[0]["Last-Modified"];
 
-                applyFieldDependencies(tracker_with_field_values, modal_model.values);
-
                 modal_model.tracker = tracker_with_field_values;
                 modal_model.ordered_fields = buildFormTree(tracker_with_field_values);
 
@@ -259,7 +218,7 @@ function ArtifactModalService($q, TlpModalService, TuleapArtifactModalLoading) {
         var preference_key = "tracker_comment_invertorder_" + tracker_id;
 
         return $q.when(getUserPreference(user_id, preference_key)).then(function (data) {
-            modal_model.invert_followups_comments_order = Boolean(data.value);
+            modal_model.invert_followups_comments_order = data.value === "0";
         });
     }
 
@@ -309,26 +268,6 @@ function ArtifactModalService($q, TlpModalService, TuleapArtifactModalLoading) {
 
     function getWorkflow(tracker) {
         return tracker.workflow;
-    }
-
-    function applyFieldDependencies(tracker, field_values) {
-        var filterTargetFieldValues = function (
-            source_field_id,
-            target_field,
-            field_dependencies_rules
-        ) {
-            if (field_values[source_field_id] !== undefined) {
-                var source_value_ids = [].concat(field_values[source_field_id].bind_value_ids);
-
-                target_field.filtered_values = getTargetFieldPossibleValues(
-                    source_value_ids,
-                    target_field,
-                    field_dependencies_rules
-                );
-            }
-        };
-
-        setUpFieldDependenciesActions(tracker, filterTargetFieldValues);
     }
 
     function mapPrefillsToFieldValues(prefill_values, tracker_fields) {

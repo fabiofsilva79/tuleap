@@ -108,6 +108,7 @@ class Codendi_HTMLPurifier
         } else {
             $this->setConfigAttribute($config, 'Cache', 'DefinitionImpl', null);
         }
+        $this->setConfigAttribute($config, 'Core', 'AllowHostnameUnderscore', true);
         $this->setConfigAttribute($config, 'URI', 'AllowedSchemes', self::$allowed_schemes);
         return $config;
     }
@@ -276,6 +277,7 @@ class Codendi_HTMLPurifier
      */
     public function purify($html, $level = 0, $groupId = 0)
     {
+        $html = (string) $html;
         switch ($level) {
             case self::CONFIG_DISABLED:
                 $clean = $html;

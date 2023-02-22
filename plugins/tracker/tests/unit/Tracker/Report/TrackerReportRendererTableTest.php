@@ -26,7 +26,7 @@ use SimpleXMLElement;
 use Tracker_FormElement_Field_ArtifactId;
 use Tracker_Report_Renderer_Table;
 
-class TrackerReportRendererTableTest extends \Tuleap\Test\PHPUnit\TestCase
+final class TrackerReportRendererTableTest extends \Tuleap\Test\PHPUnit\TestCase
 {
     use MockeryPHPUnitIntegration;
 
@@ -83,6 +83,10 @@ class TrackerReportRendererTableTest extends \Tuleap\Test\PHPUnit\TestCase
         $this->form_elements_2->shouldReceive('isUsed')->andReturn(true);
         $this->form_elements_3->shouldReceive('isUsed')->andReturn(true);
 
+        $this->form_elements_1->shouldReceive('isMultiple')->andReturn(false);
+        $this->form_elements_2->shouldReceive('isMultiple')->andReturn(false);
+        $this->form_elements_3->shouldReceive('isMultiple')->andReturn(false);
+
         $this->form_elements_1->shouldReceive('getQuerySelect')->andReturn("a.id AS `artifact_id`");
         $this->form_elements_1->shouldReceive('getQueryFrom')->andReturn("");
 
@@ -119,7 +123,7 @@ class TrackerReportRendererTableTest extends \Tuleap\Test\PHPUnit\TestCase
         $this->tracker_report_renderer_table->shouldReceive('getSort')->andReturn([]);
 
         $this->assertSame(
-            [' SELECT a.id AS id, c.id AS changeset_id , a.id AS `artifact_id`, a.id AS `artifact_id`, a.id AS `artifact_id` FROM tracker_artifact AS a INNER JOIN tracker_changeset AS c ON (c.artifact_id = a.id)    WHERE c.id IN (98,99,100)  GROUP BY id '],
+            [' SELECT a.id AS id, c.id AS changeset_id , a.id AS `artifact_id`, a.id AS `artifact_id`, a.id AS `artifact_id` FROM tracker_artifact AS a INNER JOIN tracker_changeset AS c ON (c.artifact_id = a.id)    WHERE c.id IN (98,99,100) '],
             $this->tracker_report_renderer_table->buildOrderedQuery($this->matchings_ids, $this->columns, false)
         );
     }

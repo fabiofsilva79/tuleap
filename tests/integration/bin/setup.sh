@@ -44,7 +44,7 @@ setup_database() {
         --site-admin-password="welcome0" \
         --nss-password="welcome0"
 
-    TLP_SYSTEMCTL=docker-centos7 /usr/share/tuleap/src/tuleap-cfg/tuleap-cfg.php setup:tuleap --force --tuleap-fqdn="localhost"
+    TLP_SYSTEMCTL=docker-centos7 /usr/share/tuleap/src/tuleap-cfg/tuleap-cfg.php setup:tuleap --force --tuleap-fqdn="localhost" --php-version=$PHP_VERSION
     echo '$sys_logger_level = "debug";' >> /etc/tuleap/conf/local.inc
 
     # Allow all privileges on DB starting with 'testdb_' so we can create and drop database during the tests
@@ -68,6 +68,7 @@ seed_data() {
         oauth2_server \
         program_management \
         onlyoffice \
+        mediawiki_standalone \
         hudson_git \
         fts_db \
         fts_meilisearch \

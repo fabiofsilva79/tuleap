@@ -35,12 +35,10 @@ use Tracker_Artifact_PriorityHistoryDao;
 use Tracker_Artifact_PriorityManager;
 use Tracker_Artifact_XMLImportBuilder;
 use Tracker_ArtifactFactory;
-use Tracker_Exception;
 use Tracker_FormElement_InvalidFieldException;
 use Tracker_FormElement_InvalidFieldValueException;
 use Tracker_FormElement_RESTValueByField_NotImplementedException;
 use Tracker_FormElementFactory;
-use Tracker_NoChangeException;
 use Tracker_REST_Artifact_ArtifactCreator;
 use Tracker_URLVerification;
 use Tracker_XML_Exporter_ArtifactXMLExporterBuilder;
@@ -94,7 +92,10 @@ use Tuleap\Tracker\Artifact\Changeset\PostCreation\ActionsRunner;
 use Tuleap\Tracker\Artifact\ChangesetValue\ArtifactLink\ArtifactForwardLinksRetriever;
 use Tuleap\Tracker\Artifact\ChangesetValue\ArtifactLink\ArtifactLinksByChangesetCache;
 use Tuleap\Tracker\Artifact\ChangesetValue\ArtifactLink\ChangesetValueArtifactLinkDao;
+use Tuleap\Tracker\Artifact\ChangesetValue\ArtifactLink\ReverseLinksDao;
+use Tuleap\Tracker\Artifact\ChangesetValue\ArtifactLink\ReverseLinksRetriever;
 use Tuleap\Tracker\Artifact\ChangesetValue\ChangesetValueSaver;
+use Tuleap\Tracker\Artifact\Link\ArtifactUpdateHandler;
 use Tuleap\Tracker\Exception\MoveArtifactNotDoneException;
 use Tuleap\Tracker\Exception\MoveArtifactSemanticsException;
 use Tuleap\Tracker\Exception\MoveArtifactTargetProjectNotActiveException;
@@ -106,10 +107,12 @@ use Tuleap\Tracker\FormElement\Field\ArtifactLink\ParentLinkAction;
 use Tuleap\Tracker\FormElement\Field\ArtifactLink\Type\TypeDao;
 use Tuleap\Tracker\FormElement\Field\ArtifactLink\Type\TypePresenterFactory;
 use Tuleap\Tracker\FormElement\Field\ListFields\FieldValueMatcher;
+use Tuleap\Tracker\FormElement\Field\Text\TextValueValidator;
 use Tuleap\Tracker\PermissionsFunctionsWrapper;
 use Tuleap\Tracker\REST\Artifact\ArtifactReference;
 use Tuleap\Tracker\REST\Artifact\ArtifactRepresentation;
 use Tuleap\Tracker\REST\Artifact\ArtifactRepresentationBuilder;
+use Tuleap\Tracker\REST\Artifact\ArtifactRestUpdateConditionsChecker;
 use Tuleap\Tracker\REST\Artifact\ArtifactUpdater;
 use Tuleap\Tracker\REST\Artifact\Changeset\ChangesetRepresentationBuilder;
 use Tuleap\Tracker\REST\Artifact\Changeset\Comment\CommentRepresentationBuilder;
@@ -119,6 +122,8 @@ use Tuleap\Tracker\REST\Artifact\ChangesetValue\ArtifactLink\NewArtifactLinkInit
 use Tuleap\Tracker\REST\Artifact\ChangesetValue\FieldsDataBuilder;
 use Tuleap\Tracker\REST\Artifact\ChangesetValue\FieldsDataFromValuesByFieldBuilder;
 use Tuleap\Tracker\REST\Artifact\MovedArtifactValueBuilder;
+use Tuleap\Tracker\REST\Artifact\PUTHandler;
+use Tuleap\Tracker\REST\Artifact\StatusValueRepresentation;
 use Tuleap\Tracker\REST\FormElement\PermissionsForGroupsBuilder;
 use Tuleap\Tracker\REST\FormElementRepresentationsBuilder;
 use Tuleap\Tracker\REST\MinimalTrackerRepresentation;
@@ -165,53 +170,20 @@ class ArtifactsResource extends AuthenticatedResource
     public const COMPLETE_TRACKER_STRUCTURE = 'complete';
 
     public const EMPTY_TYPE = '';
-    /**
-     * @var PostMoveArticfactRESTAction
-     */
-    private $post_move_action;
-    /**
-     * @var UserManager
-     */
-    private $user_manager;
-    /**
-     * @var UserDeletionRetriever
-     */
-    private $user_deletion_retriever;
 
-    /** @var Tracker_ArtifactFactory */
-    private $artifact_factory;
 
-    /** @var ArtifactRepresentationBuilder */
-    private $builder;
-
-    /** @var Tracker_FormElementFactory */
-    private $formelement_factory;
-
-    /** @var TrackerFactory */
-    private $tracker_factory;
-
-    /** @var MovedArtifactValueBuilder  */
-    private $moved_value_builder;
-
-    /**
-     * @var ArtifactsDeletionManager
-     */
-    private $artifacts_deletion_manager;
-
-    /**
-     * @var ArtifactsDeletionConfig
-     */
-    private $artifacts_deletion_config;
-
-    /**
-     * @var EventManager
-     */
-    private $event_manager;
-
-    /**
-     * @var \Tracker_REST_TrackerRestBuilder
-     */
-    private $tracker_rest_builder;
+    private PostMoveArticfactRESTAction $post_move_action;
+    private UserManager $user_manager;
+    private UserDeletionRetriever $user_deletion_retriever;
+    private Tracker_ArtifactFactory $artifact_factory;
+    private ArtifactRepresentationBuilder $builder;
+    private Tracker_FormElementFactory $formelement_factory;
+    private TrackerFactory $tracker_factory;
+    private MovedArtifactValueBuilder $moved_value_builder;
+    private ArtifactsDeletionManager $artifacts_deletion_manager;
+    private ArtifactsDeletionConfig $artifacts_deletion_config;
+    private EventManager $event_manager;
+    private \Tracker_REST_TrackerRestBuilder $tracker_rest_builder;
 
     public function __construct()
     {
@@ -361,7 +333,8 @@ class ArtifactsResource extends AuthenticatedResource
                 $artifact_representations[] = $this->builder->getArtifactRepresentationWithFieldValuesInBothFormat(
                     $user,
                     $artifact,
-                    MinimalTrackerRepresentation::build($artifact->getTracker())
+                    MinimalTrackerRepresentation::build($artifact->getTracker()),
+                    StatusValueRepresentation::buildFromArtifact($artifact, $user)
                 );
             }
         }
@@ -471,11 +444,11 @@ class ArtifactsResource extends AuthenticatedResource
         }
 
         if ($values_format === self::VALUES_DEFAULT || $values_format === self::VALUES_FORMAT_COLLECTION) {
-            $representation = $this->builder->getArtifactRepresentationWithFieldValues($user, $artifact, $tracker_representation);
+            $representation = $this->builder->getArtifactRepresentationWithFieldValues($user, $artifact, $tracker_representation, StatusValueRepresentation::buildFromArtifact($artifact, $user));
         } elseif ($values_format === self::VALUES_FORMAT_BY_FIELD) {
-            $representation = $this->builder->getArtifactRepresentationWithFieldValuesByFieldValues($user, $artifact, $tracker_representation);
+            $representation = $this->builder->getArtifactRepresentationWithFieldValuesByFieldValues($user, $artifact, $tracker_representation, StatusValueRepresentation::buildFromArtifact($artifact, $user));
         } elseif ($values_format === self::VALUES_FORMAT_ALL) {
-            $representation = $this->builder->getArtifactRepresentationWithFieldValuesInBothFormat($user, $artifact, $tracker_representation);
+            $representation = $this->builder->getArtifactRepresentationWithFieldValuesInBothFormat($user, $artifact, $tracker_representation, StatusValueRepresentation::buildFromArtifact($artifact, $user));
         }
 
         return $representation;
@@ -526,7 +499,7 @@ class ArtifactsResource extends AuthenticatedResource
      * Get all artifacts linked by type
      *
      * Get all the artifacts linked by type.
-     * If no type is provided, it will search linked artifacts witn no type.
+     * If no type is provided, it will search linked artifacts with no type.
      *
      * @url GET {id}/linked_artifacts
      *
@@ -580,7 +553,8 @@ class ArtifactsResource extends AuthenticatedResource
             $artifact_representations[] = $this->builder->getArtifactRepresentationWithFieldValuesInBothFormat(
                 $user,
                 $linked_artifact,
-                $tracker_representation
+                $tracker_representation,
+                StatusValueRepresentation::buildFromArtifact($linked_artifact, $user)
             );
         }
 
@@ -638,7 +612,7 @@ class ArtifactsResource extends AuthenticatedResource
      *
      * @param int $id Id of the artifact
      * @param string $fields Whether you want to fetch all fields or just comments {@from path}{@choice all,comments}
-     * @param int $limit Number of elements displayed per page {@from path}{@min 1}
+     * @param int $limit Number of elements displayed per page {@from path}{@min 1}{@max 50}
      * @param int $offset Position of the first element to display {@from path}{@min 0}
      * @param string $order By default the changesets are returned by Changeset Id ASC. Set this parameter to either ASC or DESC {@from path}{@choice asc,desc}
      * @return array {@type Tuleap\Tracker\REST\ChangesetRepresentation}
@@ -648,7 +622,7 @@ class ArtifactsResource extends AuthenticatedResource
     public function getArtifactChangesets(
         $id,
         $fields = Changeset::FIELDS_ALL,
-        $limit = 10,
+        $limit = self::DEFAULT_LIMIT,
         $offset = self::DEFAULT_OFFSET,
         $order = self::ORDER_ASC,
     ) {
@@ -664,7 +638,7 @@ class ArtifactsResource extends AuthenticatedResource
         $reverse_order = (bool) (strtolower($order) === self::ORDER_DESC);
         $changesets    = $this->builder->getArtifactChangesetsRepresentation($user, $artifact, $fields, $offset, $limit, $reverse_order);
 
-        $this->sendAllowHeadersForChangesets($artifact);
+        $this->sendAllowHeadersForChangesets();
         Header::sendPaginationHeaders($limit, $offset, $changesets->totalCount(), self::MAX_LIMIT);
         return $changesets->toArray();
     }
@@ -702,12 +676,16 @@ class ArtifactsResource extends AuthenticatedResource
      * @param array                             $values  Artifact fields values {@from body} {@type \Tuleap\Tracker\REST\v1\ArtifactValuesRepresentation}
      * @param NewChangesetCommentRepresentation $comment Comment about update {body, format} {@from body}
      *
+     * @throws RestException 400
      * @throws RestException 403
      */
     protected function putId($id, array $values, ?NewChangesetCommentRepresentation $comment = null)
     {
-        $user     = $this->user_manager->getCurrentUser();
-        $artifact = $this->getArtifactById($user, $id);
+        $transaction_executor = new DBTransactionExecutorWithConnection(
+            DBFactory::getMainTuleapDBConnection()
+        );
+        $user                 = $this->user_manager->getCurrentUser();
+        $artifact             = $this->getArtifactById($user, $id);
 
         ProjectStatusVerificator::build()->checkProjectStatusAllowsAllUsersToAccessIt(
             $artifact->getTracker()->getProject()
@@ -723,7 +701,8 @@ class ArtifactsResource extends AuthenticatedResource
                 new ArtifactLinkValidator(
                     $this->artifact_factory,
                     new TypePresenterFactory(new TypeDao(), $usage_dao),
-                    $usage_dao
+                    $usage_dao,
+                    $event_dispatcher,
                 ),
                 new WorkflowUpdateChecker(
                     new FrozenFieldDetector(
@@ -738,7 +717,7 @@ class ArtifactsResource extends AuthenticatedResource
             $fields_retriever,
             $this->event_manager,
             new \Tracker_Artifact_Changeset_ChangesetDataInitializator($this->formelement_factory),
-            new DBTransactionExecutorWithConnection(DBFactory::getMainTuleapDBConnection()),
+            $transaction_executor,
             ArtifactChangesetSaver::build(),
             new ParentLinkAction($this->artifact_factory),
             new AfterNewChangesetHandler($this->artifact_factory, $fields_retriever),
@@ -754,42 +733,52 @@ class ArtifactsResource extends AuthenticatedResource
                     $event_dispatcher,
                     new \Tracker_Artifact_Changeset_CommentDao(),
                 ),
+                new TextValueValidator(),
             )
         );
 
-        $this->sendAllowHeadersForArtifact();
-        try {
-            $updater = new ArtifactUpdater(
-                new FieldsDataBuilder(
-                    $this->formelement_factory,
-                    new NewArtifactLinkChangesetValueBuilder(
-                        new ArtifactForwardLinksRetriever(
-                            new ArtifactLinksByChangesetCache(),
-                            new ChangesetValueArtifactLinkDao(),
-                            $this->artifact_factory
-                        )
-                    ),
-                    new NewArtifactLinkInitialChangesetValueBuilder()
+        $fields_data_builder       = new FieldsDataBuilder(
+            $this->formelement_factory,
+            new NewArtifactLinkChangesetValueBuilder(
+                new ArtifactForwardLinksRetriever(
+                    new ArtifactLinksByChangesetCache(),
+                    new ChangesetValueArtifactLinkDao(),
+                    $this->artifact_factory
                 ),
-                $changeset_creator
-            );
-            $updater->update($user, $artifact, $values, $comment);
-        } catch (Tracker_FormElement_InvalidFieldException $exception) {
-            throw new RestException(400, $exception->getMessage());
-        } catch (Tracker_FormElement_InvalidFieldValueException $exception) {
-            throw new RestException(400, $exception->getMessage());
-        } catch (Tracker_NoChangeException $exception) {
-            //Do nothing
-        } catch (Tracker_Exception $exception) {
-            if ($GLOBALS['Response']->feedbackHasErrors()) {
-                throw new RestException(500, $GLOBALS['Response']->getRawFeedback());
-            }
-            throw new RestException(500, $exception->getMessage());
-        } catch (Tracker_Artifact_Attachment_AlreadyLinkedToAnotherArtifactException $exception) {
-            throw new RestException(500, $exception->getMessage());
-        } catch (Tracker_Artifact_Attachment_FileNotFoundException $exception) {
-            throw new RestException(404, $exception->getMessage());
-        }
+            ),
+            new NewArtifactLinkInitialChangesetValueBuilder()
+        );
+        $update_conditions_checker = new ArtifactRestUpdateConditionsChecker();
+        $updater                   = new ArtifactUpdater(
+            $fields_data_builder,
+            $changeset_creator,
+            $update_conditions_checker,
+        );
+
+        $artifact_factory =  Tracker_ArtifactFactory::instance();
+
+        $reverse_link_retriever = new ReverseLinksRetriever(
+            new ReverseLinksDao(),
+            $artifact_factory
+        );
+
+        $artifact_from_rest_updater = new ArtifactUpdateHandler(
+            $changeset_creator,
+            $this->formelement_factory,
+            $artifact_factory,
+            $event_dispatcher
+        );
+
+        $this->sendAllowHeadersForArtifact();
+
+        $put_handler = new PUTHandler(
+            $fields_data_builder,
+            $reverse_link_retriever,
+            $artifact_from_rest_updater,
+            $transaction_executor,
+            $update_conditions_checker,
+        );
+        $put_handler->handle($values, $artifact, $user, $comment);
 
         $this->sendLastModifiedHeader($artifact);
         $this->sendETagHeader($artifact);

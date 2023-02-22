@@ -43,16 +43,21 @@ Group: Development/Tools
 URL: http://tuleap.net
 Source0: %{name}-%{version}.tar.gz
 BuildRoot: %{_tmppath}/%{name}-%{version}-%{release}-root
-Packager: Manuel VACELET <manuel.vacelet@enalean.com>
+Packager: Tuleap team <security@tuleap.org>
 
 AutoReqProv: no
 
 # Php and web related stuff
-Requires: php80-php-common >= 8.0.7
-Requires: php80-php, php80-php-mysql, php80-php-xml, php80-php-mbstring, php80-php-gd, php80-php-soap
-Requires: php80-php-intl, php80-php-process, php80-php-opcache, php80-php-fpm, php80-php-pecl-redis5, php80-php-sodium
-Requires: php80-php-pecl-zip
+Requires: php81-php-common
+Requires: php81-php, php81-php-mysql, php81-php-xml, php81-php-mbstring, php81-php-gd, php81-php-soap
+Requires: php81-php-intl, php81-php-process, php81-php-opcache, php81-php-fpm, php81-php-pecl-redis5, php81-php-sodium
+Requires: php81-php-pecl-zip
+Requires: php81-php-ffi
+%if "%{?dist}" == ".el9"
+Requires: mysql
+%else
 Requires: rh-mysql80-mysql
+%endif
 
 Requires: perl-DBI, perl-DBD-MySQL, perl-LDAP, perl-JSON, sudo, openssh
 Requires: highlight, nginx, logrotate
@@ -75,6 +80,8 @@ Tuleap is a web based application that address all the aspects of product develo
 ## Core component definitions
 #
 
+%if "%{?dist}" == ".el7"
+
 %package core-mailman
 Summary: Mailman component for Tuleap
 Group: Development/Tools
@@ -88,13 +95,14 @@ Summary: CVS component for Tuleap
 Group: Development/Tools
 Requires: %{name} = @@VERSION@@-@@RELEASE@@%{?dist}, rcs, cvsgraph
 Requires: perl-libwww-perl, perl-LWP-Protocol-https
-Requires: viewvc, viewvc-theme-tuleap >= 1.0.8
+Requires: viewvc >= 1.1.30, viewvc-theme-tuleap >= 1.0.8
 Requires: cvs-tuleap
 Requires: libnss-mysql, nss, nscd
 Requires: perl-Text-Iconv
 %description core-cvs
 Manage dependencies for Tuleap CVS integration
 
+%endif
 
 %package core-subversion
 Summary: Subversion component for Tuleap
@@ -102,8 +110,12 @@ Group: Development/Tools
 Version: 1.2
 Release: @@VERSION@@_@@RELEASE@@%{?dist}
 Requires: %{name} = @@VERSION@@-@@RELEASE@@%{?dist}, mod_dav_svn
-Requires: viewvc, viewvc-theme-tuleap >= 1.0.8
-Requires: python
+%if "%{?dist}" == ".el9"
+Requires: viewvc-tuleap, httpd, glibc-langpack-en
+%else
+Requires: viewvc >= 1.1.30, python
+%endif
+Requires: viewvc-theme-tuleap >= 1.0.8
 Requires: perl-libwww-perl, perl-LWP-Protocol-https
 Requires: tuleap-theme-flamingparrot
 Requires: sha1collisiondetector
@@ -114,14 +126,16 @@ Manage dependencies for Tuleap Subversion integration
 ## Plugins
 #
 
+%if "%{?dist}" == ".el7"
 %package plugin-forumml
 Summary: ForumML plugin for Tuleap
 Group: Development/Tools
-Requires: %{name} = @@VERSION@@-@@RELEASE@@%{?dist}, php80-php-pecl-mailparse
+Requires: %{name} = @@VERSION@@-@@RELEASE@@%{?dist}, php81-php-pecl-mailparse
 Requires: tuleap-core-mailman
 %description plugin-forumml
 ForumML brings to Tuleap a very nice mail archive viewer and the possibility
 to send mails through the web interface. It can replace the forums.
+%endif
 
 %package plugin-svn
 Summary: Subversion plugin for Tuleap
@@ -160,7 +174,7 @@ Group: Development/Tools
 %package plugin-ldap
 Summary: Tuleap plugin to manage LDAP integration
 Group: Development/Tools
-Requires: php80-php-ldap
+Requires: php81-php-ldap
 %description plugin-ldap
 LDAP Plugin for Tuleap. Provides LDAP information, LDAP
 authentication, user and group management.
@@ -197,7 +211,7 @@ Plugin to access to file releases & docman though WebDAV
 AutoReqProv: no
 Summary: Tracker v5 for Tuleap
 Group: Development/Tools
-Requires: %{name} = @@VERSION@@-@@RELEASE@@%{?dist}, libxslt, php80-php-pecl-mailparse
+Requires: %{name} = @@VERSION@@-@@RELEASE@@%{?dist}, libxslt, php81-php-pecl-mailparse
 %description plugin-tracker
 New tracker generation for Tuleap.
 
@@ -243,7 +257,7 @@ Archive deleted items before purging them from filesystem
 Summary: Mediawiki plugin
 Group: Development/Tools
 Requires: %{name} = @@VERSION@@-@@RELEASE@@%{?dist}
-Requires: php-mediawiki-tuleap-123 >= 1.23.9-17
+Requires: php-mediawiki-tuleap-123 >= 1.23.9-17, tuleap-plugin-mediawiki-standalone
 %description plugin-mediawiki
 This plugin provides Mediawiki integration in Tuleap.
 
@@ -251,7 +265,7 @@ This plugin provides Mediawiki integration in Tuleap.
 Summary: MediaWiki Standalone plugin
 Group: Development/Tools
 Requires: %{name} = @@VERSION@@-@@RELEASE@@%{?dist}
-Requires: mediawiki-%{name}-flavor = @@VERSION@@, tuleap-plugin-mediawiki
+Requires: mediawiki-%{name}-flavor = @@VERSION@@
 %description plugin-mediawiki-standalone
 %{summary}.
 
@@ -386,6 +400,27 @@ Requires: %{name} = @@VERSION@@-@@RELEASE@@%{?dist}
 %description plugin-securitytxt
 %{summary}.
 
+%package plugin-botmattermost
+Summary: Bot Mattermost management for Tuleap
+Group: Development/Tools
+Requires: %{name} = @@VERSION@@-@@RELEASE@@%{?dist}
+%description plugin-botmattermost
+%{summary}.
+
+%package plugin-botmattermost-agiledashboard
+Summary: Bot Mattermost AgileDashboard - Stand up summary
+Group: Development/Tools
+Requires: %{name} = @@VERSION@@-@@RELEASE@@%{?dist}, tuleap-plugin-botmattermost, tuleap-plugin-agiledashboard
+%description plugin-botmattermost-agiledashboard
+%{summary}.
+
+%package plugin-botmattermost-git
+Summary: Bot Mattermost git - Git Notification
+Group: Development/Tools
+Requires: %{name} = @@VERSION@@-@@RELEASE@@%{?dist}, tuleap-plugin-botmattermost, tuleap-plugin-git
+%description plugin-botmattermost-git
+%{summary}.
+
 %if %{with enterprise}
 
 %package plugin-baseline
@@ -518,7 +553,7 @@ Requires: %{name} = @@VERSION@@-@@RELEASE@@%{?dist}, tuleap-plugin-agiledashboar
 %package plugin-jira-import
 Summary: Import Jira Projects
 Group: Development/Tools
-Requires: %{name} = @@VERSION@@-@@RELEASE@@%{?dist}, tuleap-plugin-tracker, tuleap-plugin-cardwall, tuleap-plugin-agiledashboard
+Requires: %{name} = @@VERSION@@-@@RELEASE@@%{?dist}, tuleap-plugin-tracker, tuleap-plugin-cardwall, tuleap-plugin-agiledashboard, tuleap-plugin-projectmilestones
 %description plugin-jira-import
 %{summary}.
 
@@ -536,6 +571,20 @@ Requires: %{name} = @@VERSION@@-@@RELEASE@@%{?dist}, tuleap-plugin-tracker
 Obsoletes: tuleap-plugin-textualreport < 13.4
 Provides: tuleap-plugin-textualreport
 %description plugin-document_generation
+%{summary}.
+
+%package plugin-mytuleap-contact-support
+Summary: myTuleap Contact support
+Group: Development/Tools
+Requires: %{name} = @@VERSION@@-@@RELEASE@@%{?dist}
+%description plugin-mytuleap-contact-support
+%{summary}.
+
+%package plugin-enalean-licensemanager
+Summary: Manage usage of license for Tuleap
+Group: Development/Tools
+Requires: %{name} = @@VERSION@@-@@RELEASE@@%{?dist}
+%description plugin-enalean-licensemanager
 %{summary}.
 
 %endif
@@ -582,7 +631,7 @@ echo '@@VERSION@@-@@RELEASE@@' > VERSION
 #
 # Install tuleap application
 %{__install} -m 755 -d $RPM_BUILD_ROOT/%{APP_DIR}
-for i in tools plugins site-content src VERSION LICENSE preload.php; do
+for i in tools plugins site-content src VERSION LICENSE; do
 	%{__cp} -ar $i $RPM_BUILD_ROOT/%{APP_DIR}
 done
 %if %{with enterprise}
@@ -595,6 +644,7 @@ done
 %{__rm} -rf $RPM_BUILD_ROOT/%{APP_DIR}/plugins/template
 %{__rm} -rf $RPM_BUILD_ROOT/%{APP_DIR}/plugins/mfa
 %{__rm} -rf $RPM_BUILD_ROOT/%{APP_DIR}/plugins/tuleap_synchro
+
 %if %{with enterprise}
 %else
 %{__rm} -rf $RPM_BUILD_ROOT/%{APP_DIR}/plugins/projectmilestones
@@ -618,10 +668,18 @@ done
 %{__rm} -rf $RPM_BUILD_ROOT/%{APP_DIR}/plugins/document_generation
 %{__rm} -rf $RPM_BUILD_ROOT/%{APP_DIR}/plugins/jira_import
 %{__rm} -rf $RPM_BUILD_ROOT/%{APP_DIR}/plugins/program_management
+%{__rm} -rf $RPM_BUILD_ROOT/%{APP_DIR}/plugins/mytuleap_contact_support
+%{__rm} -rf $RPM_BUILD_ROOT/%{APP_DIR}/plugins/enalean_licensemanager
 %endif
+
+%if "%{?dist}" == ".el9"
+%{__rm} -rf $RPM_BUILD_ROOT/%{APP_DIR}/plugins/forumml
+%endif
+
 %if %{with experimental}
 %else
 %endif
+
 %{__rm} -rf $RPM_BUILD_ROOT/%{APP_DIR}/src/themes/BurningParrot/composer.json
 %{__rm} -rf $RPM_BUILD_ROOT/%{APP_DIR}/src/themes/BurningParrot/css
 %{__rm} -rf $RPM_BUILD_ROOT/%{APP_DIR}/src/themes/BurningParrot/images
@@ -657,7 +715,6 @@ done
 %{__install} src/utils/systemd/tuleap.service $RPM_BUILD_ROOT/%{_unitdir}
 %{__install} src/utils/systemd/tuleap-workers.service $RPM_BUILD_ROOT/%{_unitdir}
 %{__install} src/utils/systemd/tuleap-worker@.service $RPM_BUILD_ROOT/%{_unitdir}
-%{__install} src/utils/systemd/tuleap-svn-updater.service $RPM_BUILD_ROOT/%{_unitdir}
 %{__install} src/utils/systemd/tuleap-php-fpm.service $RPM_BUILD_ROOT/%{_unitdir}
 %{__install} src/utils/systemd/tuleap-process-system-events-default.timer $RPM_BUILD_ROOT/%{_unitdir}
 %{__install} src/utils/systemd/tuleap-process-system-events-default.service $RPM_BUILD_ROOT/%{_unitdir}
@@ -675,8 +732,10 @@ done
 # Install system tmpfiles
 %{__install} -d $RPM_BUILD_ROOT/%{_tmpfilesdir}
 %{__install} src/utils/systemd/tmpfiles/tuleap.conf $RPM_BUILD_ROOT/%{_tmpfilesdir}
+%if "%{?dist}" == ".el7"
 %{__install} src/utils/systemd/tmpfiles/tuleap-cvs.conf $RPM_BUILD_ROOT/%{_tmpfilesdir}
 %{__install} src/utils/systemd/tmpfiles/tuleap-forumml.conf $RPM_BUILD_ROOT/%{_tmpfilesdir}
+%endif
 
 # Install Tuleap executables
 %{__install} -d $RPM_BUILD_ROOT/%{_bindir}
@@ -685,6 +744,7 @@ done
 
 %{__install} -d $RPM_BUILD_ROOT/%{APP_LIBBIN_DIR}
 %{__install} src/utils/gotohell $RPM_BUILD_ROOT/%{APP_LIBBIN_DIR}
+%if "%{?dist}" == ".el7"
 %{__install} src/utils/cvs1/log_accum $RPM_BUILD_ROOT/%{APP_LIBBIN_DIR}
 %{__install} src/utils/cvs1/commit_prep $RPM_BUILD_ROOT/%{APP_LIBBIN_DIR}
 %{__install} src/utils/cvs1/cvssh $RPM_BUILD_ROOT/%{APP_LIBBIN_DIR}
@@ -692,15 +752,12 @@ done
 %{__install} -d $RPM_BUILD_ROOT/%{APP_DATA_DIR}/cvsroot
 %{__install} -d $RPM_BUILD_ROOT/%{APP_DATA_DIR}/cvslocks
 %{__install} -d $RPM_BUILD_ROOT/var/run/log_accum
+%endif
 %{__install} src/utils/svn/commit-email.pl $RPM_BUILD_ROOT/%{APP_LIBBIN_DIR}
 %{__install} src/utils/svn/codendi_svn_pre_commit.php $RPM_BUILD_ROOT/%{APP_LIBBIN_DIR}
 %{__install} src/utils/svn/pre-revprop-change.php $RPM_BUILD_ROOT/%{APP_LIBBIN_DIR}
 %{__install} src/utils/svn/post-revprop-change.php $RPM_BUILD_ROOT/%{APP_LIBBIN_DIR}
 %{__install} src/utils/fileforge.pl $RPM_BUILD_ROOT/%{APP_LIBBIN_DIR}/fileforge
-
-# ForgeUpgrade
-%{__install} -m 755 -d $RPM_BUILD_ROOT/usr/lib/forgeupgrade/bin
-%{__install} -m 755 src/forgeupgrade/forgeupgrade $RPM_BUILD_ROOT/usr/lib/forgeupgrade/bin
 
 # Special custom include script
 %{__install} src/etc/env.inc.php.dist $RPM_BUILD_ROOT/%{APP_LIBBIN_DIR}/env.inc.php
@@ -718,7 +775,9 @@ done
 
 # Log dir
 %{__install} -d $RPM_BUILD_ROOT/%{APP_LOG_DIR}
+%if "%{?dist}" == ".el7"
 %{__install} -d $RPM_BUILD_ROOT/%{APP_LOG_DIR}/cvslog
+%endif
 
 # Run dir
 %{__install} -d $RPM_BUILD_ROOT/%{_localstatedir}/run/tuleap
@@ -726,8 +785,9 @@ done
 # Sudoers directory
 %{__install} -d $RPM_BUILD_ROOT/etc/sudoers.d
 %{__install} src/utils/sudoers.d/tuleap_fileforge $RPM_BUILD_ROOT%{_sysconfdir}/sudoers.d/tuleap_fileforge
+%if "%{?dist}" == ".el7"
 %{__install} src/utils/sudoers.d/tuleap_cvs_log_accum $RPM_BUILD_ROOT%{_sysconfdir}/sudoers.d/tuleap_cvs_log_accum
-
+%endif
 
 ## plugin webdav
 %{__install} -d $RPM_BUILD_ROOT/%{APP_CACHE_DIR}/plugins/webdav/locks
@@ -736,9 +796,10 @@ done
 %{__sed} -i "s~%%APP_USER%%~%{APP_USER}~g" $RPM_BUILD_ROOT/etc/logrotate.d/%{APP_NAME}_webdav
 
 ## plugin forumml
+%if "%{?dist}" == ".el7"
 %{__install} -d $RPM_BUILD_ROOT/%{_localstatedir}/run/forumml
 %{__install} plugins/forumml/etc/sudoers.d/tuleap_plugin_forumml $RPM_BUILD_ROOT%{_sysconfdir}/sudoers.d/tuleap_plugin_forumml
-
+%endif
 
 # plugin-git
 %{__install} -d $RPM_BUILD_ROOT/%{APP_DATA_DIR}/gitolite
@@ -857,6 +918,9 @@ done
 %{__install} plugins/gitlab/etc/logrotate.syslog.dist $RPM_BUILD_ROOT/etc/logrotate.d/%{APP_NAME}_gitlab
 %{__sed} -i "s~%%APP_USER%%~%{APP_USER}~g" $RPM_BUILD_ROOT/etc/logrotate.d/%{APP_NAME}_gitlab
 
+# Plugin BotMattermost
+%{__cp} -ar plugins/botmattermost/tuleap-plugin-botmattermost.conf $RPM_BUILD_ROOT/%{_sysconfdir}/logrotate.d/
+
 %if %{with enterprise}
 
 # Plugin FTS Meilisearch
@@ -955,8 +1019,10 @@ fi
 
 chmod 750 /var/lib/gitolite
 
+%if "%{?dist}" == ".el7"
 %pre core-cvs
 /usr/bin/rm -rf /var/lock/cvs
+%endif
 
 #
 #
@@ -967,12 +1033,13 @@ if [ $1 -eq 1 ]; then
         tuleap.service \
         tuleap-workers.service \
         tuleap-php-fpm.service &>/dev/null || :
-    /usr/bin/systemctl mask php80-php-fpm || :
+    /usr/bin/systemctl mask php81-php-fpm || :
 fi
 
 # Clean old tuleap cache file
 /usr/bin/rm -rf %{APP_CACHE_DIR}/tuleap_hooks_cache
 
+%if "%{?dist}" == ".el7"
 %post core-cvs
 /usr/bin/ln -s %{APP_DATA_DIR}/cvslocks /var/lock/cvs
 if [ ! -f %{_sysconfdir}/shells ] ; then
@@ -982,6 +1049,7 @@ else
     grep -q "^%{APP_LIBBIN_DIR}/cvssh$" %{_sysconfdir}/shells || echo "%{APP_LIBBIN_DIR}/cvssh" >> %{_sysconfdir}/shells
     grep -q "^%{APP_LIBBIN_DIR}/cvssh-restricted$" %{_sysconfdir}/shells || echo "%{APP_LIBBIN_DIR}/cvssh-restricted" >> %{_sysconfdir}/shells
 fi
+%endif
 
 %post core-subversion
 /usr/bin/systemctl daemon-reload &>/dev/null || :
@@ -1024,14 +1092,16 @@ fi
 
 
 %postun
-/usr/bin/systemctl unmask php80-php-fpm || :
+/usr/bin/systemctl unmask php81-php-fpm || :
 /usr/bin/systemctl daemon-reload &>/dev/null || :
 
+%if "%{?dist}" == ".el7"
 %postun core-cvs
 if [ "$1" = 0 ] && [ -f %{_sysconfdir}/shells ] ; then
     sed -i '\!^%{APP_LIBBIN_DIR}/cvssh$!d' %{_sysconfdir}/shells
     sed -i '\!^%{APP_LIBBIN_DIR}/cvssh-restricted$!d' %{_sysconfdir}/shells
 fi
+%endif
 
 %postun core-subversion
 /usr/bin/systemctl daemon-reload &>/dev/null || :
@@ -1049,7 +1119,6 @@ fi
 %{APP_DIR}/site-content
 %{APP_DIR}/VERSION
 %{APP_DIR}/LICENSE
-%{APP_DIR}/preload.php
 %if %{with enterprise}
 %{APP_DIR}/ENTERPRISE_BUILD
 %endif
@@ -1133,10 +1202,12 @@ fi
 %attr(755,%{APP_USER},%{APP_USER}) %dir %{APP_LIB_DIR}
 %attr(755,%{APP_USER},%{APP_USER}) %dir %{APP_LIBBIN_DIR}
 %attr(00755,%{APP_USER},%{APP_USER}) %{APP_LIBBIN_DIR}/gotohell
+%if "%{?dist}" == ".el7"
 %attr(0755,%{APP_USER},%{APP_USER}) %{APP_LIBBIN_DIR}/log_accum
 %attr(00755,%{APP_USER},%{APP_USER}) %{APP_LIBBIN_DIR}/commit_prep
 %attr(00755,root,root) %{APP_LIBBIN_DIR}/cvssh
 %attr(00755,root,root) %{APP_LIBBIN_DIR}/cvssh-restricted
+%endif
 %attr(00755,%{APP_USER},%{APP_USER}) %{APP_LIBBIN_DIR}/commit-email.pl
 %attr(00755,%{APP_USER},%{APP_USER}) %{APP_LIBBIN_DIR}/codendi_svn_pre_commit.php
 %attr(00755,root,root) %{APP_LIBBIN_DIR}/env.inc.php
@@ -1146,17 +1217,17 @@ fi
 %attr(00644,root,root) /etc/logrotate.d/%{APP_NAME}_syslog
 %dir %attr(-,%{APP_USER},%{APP_USER}) %{APP_CACHE_DIR}
 
-# ForgeUpgrade
-%attr(00755,root,root) %dir /usr/lib/forgeupgrade/bin
-%attr(00755,root,root) /usr/lib/forgeupgrade/bin/forgeupgrade
-
 # Log dir
 %attr(755,%{APP_USER},%{APP_USER}) %dir %{APP_LOG_DIR}
+%if "%{?dist}" == ".el7"
 %attr(775,%{APP_USER},%{APP_USER}) %dir %{APP_LOG_DIR}/cvslog
+%endif
 
 # Sudoers
 %attr(00440,root,root) %{_sysconfdir}/sudoers.d/tuleap_fileforge
+%if "%{?dist}" == ".el7"
 %attr(00440,root,root) %{_sysconfdir}/sudoers.d/tuleap_cvs_log_accum
+%endif
 
 # Run dir
 %attr(00755,%{APP_USER},%{APP_USER}) %dir %{_localstatedir}/run/tuleap
@@ -1186,12 +1257,9 @@ fi
 #
 # Core
 #
+%if "%{?dist}" == ".el7"
 %files core-mailman
 %defattr(-,root,root,-)
-
-%files core-subversion
-%defattr(-,root,root,-)
-%attr(00644,root,root) %{_unitdir}/tuleap-svn-updater.service
 
 %files core-cvs
 %defattr(-,root,root,-)
@@ -1200,16 +1268,22 @@ fi
 %attr(00777,root,root) /var/run/log_accum
 # Systemd tmpfiles
 %attr(00644,root,root) %{_tmpfilesdir}/tuleap-cvs.conf
+%endif
+
+%files core-subversion
+%defattr(-,root,root,-)
 
 #
 # Plugins
 #
+%if "%{?dist}" == ".el7"
 %files plugin-forumml
 %defattr(-,root,root,-)
 %{APP_DIR}/plugins/forumml
 %attr(00750,%{APP_USER},%{APP_USER}) %{_localstatedir}/run/forumml
 %attr(00644,root,root) %{_tmpfilesdir}/tuleap-forumml.conf
 %attr(00440,root,root) %{_sysconfdir}/sudoers.d/tuleap_plugin_forumml
+%endif
 
 %files plugin-git
 %defattr(-,root,root,-)
@@ -1410,6 +1484,19 @@ fi
 %defattr(-,root,root,-)
 %{APP_DIR}/plugins/securitytxt
 
+%files plugin-botmattermost
+%defattr(-,root,root,-)
+%{APP_DIR}/plugins/botmattermost
+%attr(00644,root,root) %config(noreplace) /etc/logrotate.d/tuleap-plugin-botmattermost.conf
+
+%files plugin-botmattermost-agiledashboard
+%defattr(-,root,root,-)
+%{APP_DIR}/plugins/botmattermost_agiledashboard
+
+%files plugin-botmattermost-git
+%defattr(-,root,root,-)
+%{APP_DIR}/plugins/botmattermost_git
+
 %if %{with enterprise}
 
 %files plugin-baseline
@@ -1498,6 +1585,14 @@ fi
 %files plugin-document_generation
 %defattr(-,root,root,-)
 %{APP_DIR}/plugins/document_generation
+
+%files plugin-mytuleap-contact-support
+%defattr(-,root,root,-)
+%{APP_DIR}/plugins/mytuleap_contact_support
+
+%files plugin-enalean-licensemanager
+%defattr(-,root,root,-)
+%{APP_DIR}/plugins/enalean_licensemanager
 
 %endif
 

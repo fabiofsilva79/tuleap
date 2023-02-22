@@ -21,7 +21,7 @@ services:
           - tuleap-web.tuleap-aio-dev.docker # Same as the default sys_default_domain setting in a dev setup
 
   web:
-    image: ghcr.io/enalean/tuleap-aio-dev:c7-php80-nginx
+    image: ghcr.io/enalean/tuleap-aio-dev:c7-php81-nginx
     hostname: web
     volumes:
       - .:/usr/share/tuleap:cached
@@ -39,6 +39,7 @@ services:
     - ldap
     - db
     - realtime
+    - mailhog
 
   realtime:
     build:
@@ -107,7 +108,7 @@ services:
           - gitlab.local
 
   onlyoffice:
-    image: onlyoffice/documentserver:7.2.0.204
+    image: onlyoffice/documentserver:7.2.1.34
     environment:
       - JWT_ENABLED=true
       - JWT_SECRET=TULEAP_DO_NOT_USE_THIS_IN_PRODUCTION

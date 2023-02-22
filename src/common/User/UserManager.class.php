@@ -28,11 +28,14 @@ use Tuleap\User\Account\AccountCreated;
 use Tuleap\User\Account\DisplaySecurityController;
 use Tuleap\User\FindUserByEmailEvent;
 use Tuleap\User\ForgeUserGroupPermission\RESTReadOnlyAdmin\RestReadOnlyAdminPermission;
+use Tuleap\User\ICreateAccount;
 use Tuleap\User\InvalidSessionException;
+use Tuleap\User\LogUser;
 use Tuleap\User\ProvideAnonymousUser;
 use Tuleap\User\ProvideCurrentUser;
 use Tuleap\User\ProvideCurrentUserWithLoggedInInformation;
 use Tuleap\User\ProvideUserFromRow;
+use Tuleap\User\RetrieveUserByEmail;
 use Tuleap\User\RetrieveUserById;
 use Tuleap\User\SessionManager;
 use Tuleap\User\SessionNotCreatedException;
@@ -40,7 +43,7 @@ use Tuleap\User\UserConnectionUpdateEvent;
 use Tuleap\User\UserRetrieverByLoginNameEvent;
 use Tuleap\Widget\WidgetFactory;
 
-class UserManager implements ProvideCurrentUser, ProvideCurrentUserWithLoggedInInformation, ProvideAnonymousUser, RetrieveUserById, ProvideUserFromRow // phpcs:ignore PSR1.Classes.ClassDeclaration.MissingNamespace
+class UserManager implements ProvideCurrentUser, ProvideCurrentUserWithLoggedInInformation, ProvideAnonymousUser, RetrieveUserById, RetrieveUserByEmail, ProvideUserFromRow, ICreateAccount, LogUser // phpcs:ignore PSR1.Classes.ClassDeclaration.MissingNamespace
 {
     /**
      * User with id lower than 100 are considered specials (siteadmin, null,
@@ -48,11 +51,14 @@ class UserManager implements ProvideCurrentUser, ProvideCurrentUserWithLoggedInI
      */
     public const SPECIAL_USERS_LIMIT = 100;
 
-    public $_users           = []; // phpcs:ignore PSR2.Classes.PropertyDeclaration.Underscore
-    public $_userid_bynames  = []; // phpcs:ignore PSR2.Classes.PropertyDeclaration.Underscore
-    public $_userid_byldapid = []; // phpcs:ignore PSR2.Classes.PropertyDeclaration.Underscore
+    /**
+     * @psalm-var array<int|string,PFUser|null>
+     */
+    public array $_users           = []; // phpcs:ignore PSR2.Classes.PropertyDeclaration.Underscore
+    public array $_userid_bynames  = []; // phpcs:ignore PSR2.Classes.PropertyDeclaration.Underscore
+    public array $_userid_byldapid = []; // phpcs:ignore PSR2.Classes.PropertyDeclaration.Underscore
 
-    private $_userdao                                                          = null; // phpcs:ignore PSR2.Classes.PropertyDeclaration.Underscore
+    private UserDao|null $_userdao                                             = null; // phpcs:ignore PSR2.Classes.PropertyDeclaration.Underscore
     private \Tuleap\User\CurrentUserWithLoggedInInformation|null $current_user = null;
 
     /**
@@ -65,7 +71,7 @@ class UserManager implements ProvideCurrentUser, ProvideCurrentUserWithLoggedInI
         $this->pending_user_notifier = $pending_user_notifier;
     }
 
-    protected static $_instance; // phpcs:ignore PSR2.Classes.PropertyDeclaration.Underscore
+    protected static ?self $_instance; // phpcs:ignore PSR2.Classes.PropertyDeclaration.Underscore
     /**
      * @return UserManager
      */
@@ -174,7 +180,7 @@ class UserManager implements ProvideCurrentUser, ProvideCurrentUserWithLoggedInI
 
     /**
      * @param string the user_name of the user to find
-     * @return PFUser or null if the user is not found
+     * @return PFUser|null
      */
     public function getUserByUserName($user_name)
     {
@@ -191,7 +197,7 @@ class UserManager implements ProvideCurrentUser, ProvideCurrentUserWithLoggedInI
         $user    = null;
         $user_id = $this->_userid_bynames[$user_name];
         if ($user_id !== null) {
-            $user = $this->_users[$user_id];
+            $user = $this->_users[(int) $user_id];
         }
         return $user;
     }
@@ -300,13 +306,13 @@ class UserManager implements ProvideCurrentUser, ProvideCurrentUserWithLoggedInI
         return $this->getUserByUserName($login_name);
     }
 
-/**
- * Returns an array of user ids that match the given string
- *
- * @param String $search comma-separated users' names.
- *
- * @return Array
- */
+    /**
+     * Returns an array of user ids that match the given string
+     *
+     * @param String $search comma-separated users' names.
+     *
+     * @return Array
+     */
     public function getUserIdsList($search)
     {
         $userArray = explode(',', $search);
@@ -484,7 +490,7 @@ class UserManager implements ProvideCurrentUser, ProvideCurrentUserWithLoggedInI
             }
             try {
                 $session_manager    = $this->getSessionManager();
-                $now                = $_SERVER['REQUEST_TIME'];
+                $now                = $_SERVER['REQUEST_TIME'] ?? ((new DateTimeImmutable())->getTimestamp());
                 $user_agent         = $_SERVER['HTTP_USER_AGENT'] ?? '';
                 $session_lifetime   = $this->getSessionLifetime();
                 $user_from_session  = $session_manager->getUser($session_hash, $now, $session_lifetime, $user_agent);
@@ -494,7 +500,6 @@ class UserManager implements ProvideCurrentUser, ProvideCurrentUserWithLoggedInI
                     $this->current_user = null;
                 } else {
                     $accessInfo = $this->getUserAccessInfo($this->current_user->user);
-                    $now        = $_SERVER['REQUEST_TIME'];
                     $break_time = $now - ($accessInfo['last_access_date'] ?? 0);
                     //if the access is not later than 6 hours, it is not necessary to log it
                     if ($break_time > ForgeConfig::get('last_access_resolution')) {
@@ -509,6 +514,8 @@ class UserManager implements ProvideCurrentUser, ProvideCurrentUserWithLoggedInI
             if ($this->current_user === null) {
                 //No valid session_hash/ip found. User is anonymous
                 $this->current_user = \Tuleap\User\CurrentUserWithLoggedInInformation::fromAnonymous($this);
+            } elseif ($this->current_user->user->isFirstTimer()) {
+                $this->getDao()->userWillNotBeAnymoreAFirstTimer((int) $this->current_user->user->getId());
             }
             //cache the user
             $this->_users[$this->current_user->user->getId()]                = $this->current_user->user;
@@ -576,15 +583,9 @@ class UserManager implements ProvideCurrentUser, ProvideCurrentUserWithLoggedInI
     }
 
     /**
-     * Login the user
-     *
-     * @deprected
-     * @param $name string The login name submitted by the user
-     * @param ConcealedString $pwd The password submitted by the user
-     * @param $allowpending boolean True if pending users are allowed (for verify.php). Default is false
      * @return PFUser Registered user or anonymous if the authentication failed
      */
-    public function login($name, ConcealedString $pwd, $allowpending = false)
+    public function login(string $name, ConcealedString $pwd): PFUser
     {
         try {
             $password_expiration_checker = new User_PasswordExpirationChecker();
@@ -599,11 +600,7 @@ class UserManager implements ProvideCurrentUser, ProvideCurrentUserWithLoggedInI
             $status_manager              = new User_UserStatusManager();
 
             $user = $login_manager->authenticate($name, $pwd);
-            if ($allowpending) {
-                $status_manager->checkStatusOnVerifyPage($user);
-            } else {
-                $status_manager->checkStatus($user);
-            }
+            $status_manager->checkStatus($user);
 
             $this->openWebSession($user);
             $password_expiration_checker->checkPasswordLifetime($user);
@@ -611,14 +608,19 @@ class UserManager implements ProvideCurrentUser, ProvideCurrentUserWithLoggedInI
             $this->warnUserAboutAuthenticationAttempts($user);
             $this->warnUserAboutAdminReadOnlyPermission($user);
 
-            $this->getDao()->storeLoginSuccess($user->getId(), $_SERVER['REQUEST_TIME']);
+            $user->setIsFirstTimer(
+                $this->getDao()->storeLoginSuccess(
+                    $user->getId(),
+                    $_SERVER['REQUEST_TIME'] ?? (new DateTimeImmutable())->getTimestamp()
+                )
+            );
 
             \Tuleap\User\LoginInstrumentation::increment('success');
             $this->setCurrentUser(\Tuleap\User\CurrentUserWithLoggedInInformation::fromLoggedInUser($user));
             return $user;
         } catch (User_InvalidPasswordWithUserException $exception) {
             $GLOBALS['Response']->addFeedback(Feedback::ERROR, $exception->getMessage());
-            $this->getDao()->storeLoginFailure($name, $_SERVER['REQUEST_TIME']);
+            $this->getDao()->storeLoginFailure($name, $_SERVER['REQUEST_TIME'] ?? (new DateTimeImmutable())->getTimestamp());
         } catch (User_InvalidPasswordException $exception) {
             $GLOBALS['Response']->addFeedback(Feedback::ERROR, $exception->getMessage());
         } catch (User_PasswordExpiredException $exception) {
@@ -669,7 +671,7 @@ class UserManager implements ProvideCurrentUser, ProvideCurrentUserWithLoggedInI
         $expire = 0;
 
         if ($user->getStickyLogin()) {
-            $expire = $_SERVER['REQUEST_TIME'] + $this->getSessionLifetime();
+            $expire = ($_SERVER['REQUEST_TIME'] ?? (new DateTimeImmutable())->getTimestamp()) + $this->getSessionLifetime();
         }
 
         return $expire;
@@ -733,12 +735,12 @@ class UserManager implements ProvideCurrentUser, ProvideCurrentUserWithLoggedInI
     }
 
     /**
-    * loginAs allows the siteadmin to log as someone else
-    *
-    * @param string $name
-    *
-    * @return string a session hash
-    */
+     * loginAs allows the siteadmin to log as someone else
+     *
+     * @param string $name
+     *
+     * @return string a session hash
+     */
     public function loginAs($name)
     {
         if (! $this->getCurrentUser()->isSuperUser()) {
@@ -883,14 +885,11 @@ class UserManager implements ProvideCurrentUser, ProvideCurrentUserWithLoggedInI
                 if (
                     $user_password_hash === null ||
                     ! $password_handler->verifyHashPassword($user_password, $user_password_hash) ||
-                        $password_handler->isPasswordNeedRehash($user_password_hash)
+                    $password_handler->isPasswordNeedRehash($user_password_hash)
                 ) {
                     // Update password
                     $userRow['clear_password'] = $user->getPassword();
                 }
-            }
-            if ($user->getLegacyUserPw() !== '') {
-                $userRow['user_pw'] = '';
             }
             $result = $this->getDao()->updateByRow($userRow);
             if ($result) {
@@ -985,8 +984,9 @@ class UserManager implements ProvideCurrentUser, ProvideCurrentUserWithLoggedInI
      */
     public function createAccount(PFUser $user): ?PFUser
     {
-        $dao     = $this->getDao();
-        $user_id = $dao->create(
+        $dao          = $this->getDao();
+        $request_time = $_SERVER['REQUEST_TIME'] ?? (new DateTimeImmutable())->getTimestamp();
+        $user_id      = $dao->create(
             $user->getUserName(),
             $user->getEmail(),
             $user->getPassword(),
@@ -998,7 +998,7 @@ class UserManager implements ProvideCurrentUser, ProvideCurrentUserWithLoggedInI
             $user->getUnixUid(),
             $user->getUnixBox(),
             $user->getLdapId(),
-            $_SERVER['REQUEST_TIME'],
+            $request_time,
             $user->getConfirmHash(),
             $user->getMailSiteUpdates(),
             $user->getMailVA(),
@@ -1008,7 +1008,7 @@ class UserManager implements ProvideCurrentUser, ProvideCurrentUserWithLoggedInI
             $user->getTimezone(),
             $user->getLanguageID(),
             $user->getExpiryDate(),
-            $_SERVER['REQUEST_TIME']
+            $request_time
         );
         if (! $user_id) {
             $GLOBALS['Response']->addFeedback('error', $GLOBALS['Language']->getText('include_exit', 'error'));

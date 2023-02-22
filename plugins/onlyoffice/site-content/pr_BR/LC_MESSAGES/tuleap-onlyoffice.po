@@ -13,25 +13,30 @@ msgstr ""
 msgid "Back to %s documents"
 msgstr ""
 
-msgid "Current secret not displayed"
-msgstr ""
-
 msgid "Document"
 msgstr ""
 
-msgid "Document server URL"
+msgid "Document server has been created"
+msgstr ""
+
+msgid "Document server have been deleted"
+msgstr ""
+
+msgid ""
+"Document server restrictions cannot be removed since there are more than one "
+"server defined. Please remove other servers beforehand."
+msgstr ""
+
+msgid "Document server restrictions have been removed"
+msgstr ""
+
+msgid "Document server restrictions have been saved"
 msgstr ""
 
 msgid "Document server settings have been saved"
 msgstr ""
 
-msgid "JWT secret"
-msgstr ""
-
 msgid "ONLYOFFICE"
-msgstr ""
-
-msgid "ONLYOFFICE document server settings"
 msgstr ""
 
 msgid "ONLYOFFICE integration"
@@ -44,9 +49,6 @@ msgid "Online office files"
 msgstr ""
 
 msgid "Presentation"
-msgstr ""
-
-msgid "Save"
 msgstr ""
 
 msgid "Spreadsheet"

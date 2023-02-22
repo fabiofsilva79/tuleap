@@ -52,7 +52,6 @@ use Tracker_Artifact_Changeset_NewChangesetFieldsValidator;
 use Tracker_Artifact_ChangesetFactory;
 use Tracker_Artifact_ChangesetFactoryBuilder;
 use Tracker_Artifact_ChangesetValue;
-use Tracker_Artifact_ChangesetValue_ArtifactLink;
 use Tracker_Artifact_CopyRenderer;
 use Tracker_Artifact_EditOverlayRenderer;
 use Tracker_Artifact_Followup_Item;
@@ -119,7 +118,13 @@ use Tuleap\Tracker\Artifact\Changeset\NewChangesetCreator;
 use Tuleap\Tracker\Artifact\Changeset\NewChangesetFieldsWithoutRequiredValidationValidator;
 use Tuleap\Tracker\Artifact\Changeset\PostCreation\ActionsRunner;
 use Tuleap\Tracker\Artifact\Changeset\PostCreation\PostCreationContext;
+use Tuleap\Tracker\Artifact\ChangesetValue\ArtifactLink\ArtifactForwardLinksRetriever;
+use Tuleap\Tracker\Artifact\ChangesetValue\ArtifactLink\ArtifactLinksByChangesetCache;
+use Tuleap\Tracker\Artifact\ChangesetValue\ArtifactLink\ChangesetValueArtifactLinkDao;
+use Tuleap\Tracker\Artifact\ChangesetValue\ArtifactLink\CollectionOfForwardLinks;
 use Tuleap\Tracker\Artifact\ChangesetValue\ChangesetValueSaver;
+use Tuleap\Tracker\Artifact\Link\ArtifactLinker;
+use Tuleap\Tracker\Artifact\Link\ForwardLinkProxy;
 use Tuleap\Tracker\Artifact\RecentlyVisited\RecentlyVisitedDao;
 use Tuleap\Tracker\Artifact\RecentlyVisited\VisitRecorder;
 use Tuleap\Tracker\Artifact\Renderer\FieldsDataFromRequestRetriever;
@@ -135,6 +140,7 @@ use Tuleap\Tracker\FormElement\Field\Burndown\BurndownCacheGenerator;
 use Tuleap\Tracker\FormElement\Field\Burndown\BurndownRemainingEffortAdderForREST;
 use Tuleap\Tracker\FormElement\Field\Computed\ComputedFieldDao;
 use Tuleap\Tracker\FormElement\Field\File\CreatedFileURLMapping;
+use Tuleap\Tracker\FormElement\Field\Text\TextValueValidator;
 use Tuleap\Tracker\Notifications\UnsubscribersNotificationDAO;
 use Tuleap\Tracker\Rule\FirstValidValueAccordingToDependenciesRetriever;
 use Tuleap\Tracker\Semantic\Status\StatusValueForChangesetProvider;
@@ -1194,11 +1200,7 @@ class Artifact implements Recent_Element_Interface, Tracker_Dispatchable_Interfa
         $comment_format = Tracker_Artifact_Changeset_Comment::COMMONMARK_COMMENT,
     ) {
         $submitted_on  = $_SERVER['REQUEST_TIME'];
-        $validator     = new Tracker_Artifact_Changeset_NewChangesetFieldsValidator(
-            $this->getFormElementFactory(),
-            $this->getArtifactLinkValidator(),
-            $this->getWorkflowUpdateChecker()
-        );
+        $validator     = $this->getFieldValidator();
         $new_changeset = NewChangeset::fromFieldsDataArray(
             $this,
             $fields_data,
@@ -1716,98 +1718,47 @@ class Artifact implements Recent_Element_Interface, Tracker_Dispatchable_Interfa
     }
 
     /**
-     * User want to link an artifact to the current one
-     *
-     * @param int    $linked_artifact_id The id of the artifact to link
-     * @param PFUser $current_user       The user who made the link
+     * @deprecated use ArtifactLinker::linkArtifact() instead
      */
     public function linkArtifact(
-        $linked_artifact_id,
+        int $linked_artifact_id,
         PFUser $current_user,
         string $artifact_link_type = Tracker_FormElement_Field_ArtifactLink::NO_TYPE,
     ): bool {
-        $artlink_fields = $this->getFormElementFactory()->getUsedArtifactLinkFields($this->getTracker());
-        if (count($artlink_fields)) {
-            $comment       = '';
-            $artlink_field = $artlink_fields[0];
+        $validator = $this->getFieldValidator();
 
-            $linked_artifact_id = $this->filterArtifactIdsIAmAlreadyLinkedTo($artlink_field, $linked_artifact_id);
-            if (! $linked_artifact_id) {
-                return true;
-            }
+        $artifact_linker = new ArtifactLinker(
+            $this->getFormElementFactory(),
+            $this->getNewChangesetCreator($validator),
+            new ArtifactForwardLinksRetriever(new ArtifactLinksByChangesetCache(), new ChangesetValueArtifactLinkDao(), Tracker_ArtifactFactory::instance()),
+        );
 
-            $fields_data                                        = [];
-            $fields_data[$artlink_field->getId()]['new_values'] = $linked_artifact_id;
+        $links         = [ForwardLinkProxy::buildFromData($linked_artifact_id, $artifact_link_type)];
+        $forward_links = new CollectionOfForwardLinks($links);
 
-            if ($this->getTracker()->isProjectAllowedToUseType()) {
-                $fields_data[$artlink_field->getId()]['types'] = $this->getTypeForLink(
-                    $linked_artifact_id,
-                    $artifact_link_type
-                );
-            }
-
-            try {
-                $this->createNewChangeset($fields_data, $comment, $current_user);
-
-                return true;
-            } catch (Tracker_NoChangeException $e) {
-                $GLOBALS['Response']->addFeedback('info', $e->getMessage(), CODENDI_PURIFIER_LIGHT);
-
-                return false;
-            } catch (Tracker_Exception $e) {
-                $GLOBALS['Response']->addFeedback('error', $e->getMessage());
-
-                return false;
-            }
-        } else {
-            $GLOBALS['Response']->addFeedback(
-                'error',
-                dgettext(
-                    'tuleap-tracker',
-                    'The artifact doesn\'t have an artifact link field or you have not the permission to modify it, please reconfigure your tracker'
-                )
-            );
-
-            return false;
-        }
+        return $artifact_linker->linkArtifact($this, $forward_links, $current_user);
     }
 
     /**
-     * User want to link an artifact to the current one
-     *
-     * @param array  $linked_artifact_ids The ids of the artifacts to link
-     * @param PFUser $current_user        The user who made the link
-     *
-     * @return bool true if success false otherwise
+     * @deprecated use ArtifactLinker::linkArtifact() instead
      */
-    public function linkArtifacts($linked_artifact_ids, PFUser $current_user)
+    public function linkArtifacts(array $linked_artifact_ids, PFUser $current_user): bool
     {
-        $linked_artifact_ids = implode(',', $linked_artifact_ids);
+        $validator = $this->getFieldValidator();
 
-        return $this->linkArtifact($linked_artifact_ids, $current_user);
-    }
+        $artifact_linker = new ArtifactLinker(
+            $this->getFormElementFactory(),
+            $this->getNewChangesetCreator($validator),
+            new ArtifactForwardLinksRetriever(new ArtifactLinksByChangesetCache(), new ChangesetValueArtifactLinkDao(), Tracker_ArtifactFactory::instance()),
+        );
 
-    private function filterArtifactIdsIAmAlreadyLinkedTo(
-        Tracker_FormElement_Field_ArtifactLink $field,
-        $linked_artifact_id,
-    ) {
-        $linked_artifact_id_as_array = explode(',', $linked_artifact_id);
-
-        $last_changeset = $this->getLastChangeset();
-        if (! $last_changeset) {
-            return $linked_artifact_id;
+        $links = [];
+        foreach ($linked_artifact_ids as $linked_artifact_id) {
+            $links[] = ForwardLinkProxy::buildFromData((int) $linked_artifact_id, Tracker_FormElement_Field_ArtifactLink::NO_TYPE);
         }
+        $forward_links = new CollectionOfForwardLinks($links);
 
-        $changeset_value = $last_changeset->getValue($field);
-        \assert($changeset_value instanceof Tracker_Artifact_ChangesetValue_ArtifactLink);
-        if (! $changeset_value) {
-            return $linked_artifact_id;
-        }
-
-        $existing_links              = $changeset_value->getArtifactIds();
-        $linked_artifact_id_as_array = array_diff($linked_artifact_id_as_array, $existing_links);
-
-        return implode(',', $linked_artifact_id_as_array);
+        return $artifact_linker->linkArtifact($this, $forward_links, $current_user);
     }
 
     /**
@@ -1933,7 +1884,7 @@ class Artifact implements Recent_Element_Interface, Tracker_Dispatchable_Interfa
         return array_diff($sub_artifacts, $grandchild_artifacts);
     }
 
-    public function __toString()
+    public function __toString(): string
     {
         return self::class . " #$this->id";
     }
@@ -2181,6 +2132,15 @@ class Artifact implements Recent_Element_Interface, Tracker_Dispatchable_Interfa
         return $email_domain;
     }
 
+    private function getFieldValidator(): Tracker_Artifact_Changeset_NewChangesetFieldsValidator
+    {
+        return new Tracker_Artifact_Changeset_NewChangesetFieldsValidator(
+            $this->getFormElementFactory(),
+            $this->getArtifactLinkValidator(),
+            $this->getWorkflowUpdateChecker()
+        );
+    }
+
     private function getNewChangesetCreator(Tracker_Artifact_Changeset_FieldsValidator $fields_validator): NewChangesetCreator
     {
         $tracker_artifact_factory = $this->getArtifactFactory();
@@ -2210,6 +2170,7 @@ class Artifact implements Recent_Element_Interface, Tracker_Dispatchable_Interfa
                     $event_dispatcher,
                     new \Tracker_Artifact_Changeset_CommentDao(),
                 ),
+                new TextValueValidator(),
             )
         );
     }
@@ -2226,17 +2187,6 @@ class Artifact implements Recent_Element_Interface, Tracker_Dispatchable_Interfa
     public function setTransactionExecutorForTests(DBTransactionExecutor $transaction_executor)
     {
         $this->transaction_executor = $transaction_executor;
-    }
-
-    private function getTypeForLink($linked_artifact_id, string $artifact_link_type): array
-    {
-        $types                     = [];
-        $linked_artifact_ids_array = explode(',', $linked_artifact_id);
-        foreach ($linked_artifact_ids_array as $linked_artifact_id) {
-            $types[$linked_artifact_id] = $artifact_link_type;
-        }
-
-        return $types;
     }
 
     /**
@@ -2352,7 +2302,8 @@ class Artifact implements Recent_Element_Interface, Tracker_Dispatchable_Interfa
                 new \Tuleap\Tracker\FormElement\Field\ArtifactLink\Type\TypeDao(),
                 $usage_dao
             ),
-            $usage_dao
+            $usage_dao,
+            $this->getEventManager(),
         );
     }
 

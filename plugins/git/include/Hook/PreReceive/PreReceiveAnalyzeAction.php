@@ -22,8 +22,9 @@ declare(strict_types=1);
 
 namespace Tuleap\Git\Hook\PreReceive;
 
-use Git_Exec;
+use ForgeConfig;
 use GitRepositoryFactory;
+use Tuleap\WebAssembly\WASMCaller;
 
 final class PreReceiveAnalyzeAction
 {
@@ -32,28 +33,40 @@ final class PreReceiveAnalyzeAction
     }
 
     /**
+     * @psalm-taint-escape file
+     */
+    private function getPossibleCustomPreReceiveHookPath(\GitRepository $repository): string
+    {
+        return ForgeConfig::get('sys_data_dir') . '/untrusted-code/git/pre-receive-hook/' . (int) $repository->getId() . '.wasm';
+    }
+
+    /**
      * Analyze information related to a git object reference
      *
      * @throws PreReceiveRepositoryNotFoundException
-     * @throws PreReceiveCannotRetrieveReferenceException
+     * @throws PreReceiveWasmNotFoundException
      */
-    public function preReceiveAnalyse(string $repository_id, string $git_reference): string
+    public function preReceiveAnalyse(string $repository_id, array $pre_receive_args): string
     {
         $repository = $this->git_repository_factory->getRepositoryById((int) $repository_id);
         if ($repository === null) {
             throw new PreReceiveRepositoryNotFoundException();
         }
 
-        $git_exec = Git_Exec::buildFromRepository($repository);
-
-        try {
-            $arr      = ["obj_type" => $git_exec->getObjectType($git_reference), "content" => $git_exec->catFile($git_reference)];
-            $json_in  = json_encode($arr, JSON_THROW_ON_ERROR);
-            $json_out = $this->wasm_caller->call($json_in);
-        } catch (\Git_Command_Exception $e) {
-            throw new PreReceiveCannotRetrieveReferenceException();
+        $wasm_path = $this->getPossibleCustomPreReceiveHookPath($repository);
+        if (! is_file($wasm_path)) {
+            throw new PreReceiveWasmNotFoundException();
         }
 
-        return $json_out;
+        $hook_data = new PreReceiveHookData();
+        $i         = 0;
+        while ($i <= (count($pre_receive_args) - 3)) {
+            $hook_data->addNewRev($pre_receive_args[$i + 2], new PreReceiveHookUpdatedReference($pre_receive_args[$i], $pre_receive_args[$i + 1]));
+            $i += 3;
+        }
+
+        $json_in = json_encode($hook_data, JSON_THROW_ON_ERROR);
+
+        return $this->wasm_caller->call($wasm_path, $json_in);
     }
 }

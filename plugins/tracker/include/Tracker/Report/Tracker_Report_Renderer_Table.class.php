@@ -27,7 +27,9 @@ use Tuleap\Layout\IncludeAssets;
 use Tuleap\Project\MappingRegistry;
 use Tuleap\Tracker\Admin\ArtifactLinksUsageDao;
 use Tuleap\Tracker\Artifact\PossibleParentsRetriever;
+use Tuleap\Tracker\FormElement\Field\ArtifactLink\DisplayArtifactLinkEvent;
 use Tuleap\Tracker\FormElement\Field\ArtifactLink\Type\TypeDao;
+use Tuleap\Tracker\FormElement\Field\ArtifactLink\Type\TypePresenter;
 use Tuleap\Tracker\FormElement\Field\ArtifactLink\Type\TypePresenterFactory;
 use Tuleap\Tracker\FormElement\Field\ArtifactLink\Type\TypeSelectorPresenter;
 use Tuleap\Tracker\Report\CSVExport\CSVFieldUsageChecker;
@@ -1167,6 +1169,20 @@ class Tracker_Report_Renderer_Table extends Tracker_Report_Renderer implements T
                         //row == id, f1, f2, f3, f4...
                     }
                     $html .= '<tr class="' . $additional_classname . '" data-test="tracker-report-table-results-artifact">';
+
+                    $artifact_id                   = $row['id'];
+                    $artifact_link_can_be_modified = true;
+                    if (isset($matching_ids['type'][$artifact_id])) {
+                        $type = $matching_ids['type'][$artifact_id];
+                        if ($type instanceof TypePresenter) {
+                            $event = EventManager::instance()->dispatch(
+                                new DisplayArtifactLinkEvent($type)
+                            );
+
+                            $artifact_link_can_be_modified = $event->canLinkBeModified();
+                        }
+                    }
+
                     if ($extracolumn) {
                         $display_extracolumn = true;
                         $checked             = '';
@@ -1190,7 +1206,9 @@ class Tracker_Report_Renderer_Table extends Tracker_Report_Renderer implements T
 
                         if ($display_extracolumn) {
                             $html .= '<td class="' . $purifier->purify($classname) . '" width="1">';
-                            $html .= '<span><input type="checkbox" name="' . $purifier->purify($name) . '[]" value="' . $purifier->purify($row['id']) . '" ' . $checked . ' /></span>';
+                            if ($artifact_link_can_be_modified) {
+                                $html .= '<span><input type="checkbox" name="' . $purifier->purify($name) . '[]" value="' . $purifier->purify($row['id']) . '" ' . $checked . ' /></span>';
+                            }
                             $html .= '</td>';
                         }
                     }
@@ -1230,19 +1248,22 @@ class Tracker_Report_Renderer_Table extends Tracker_Report_Renderer implements T
                                 );
                             } else {
                                 $html .= $column['field']->fetchChangesetValue(
-                                    $row['id'],
-                                    $row['changeset_id'],
+                                    (int) $row['id'],
+                                    (int) $row['changeset_id'],
                                     $value,
                                     $this->report,
-                                    $from_aid
+                                    (int) $from_aid
                                 );
                             }
                             $html .= '</td>';
                         }
                     }
-                    $artifact_id = $row['id'];
                     if (isset($matching_ids['type'][$artifact_id])) {
-                        $type          = $matching_ids['type'][$artifact_id];
+                        $type = $matching_ids['type'][$artifact_id];
+                        if (! $type instanceof TypePresenter) {
+                            continue;
+                        }
+
                         $forward_label = $purifier->purify($type->forward_label);
                         $html         .= '<td class="tracker_formelement_read_and_edit_read_section">' . $forward_label . '</td>';
                         if (! $read_only) {
@@ -1293,7 +1314,12 @@ class Tracker_Report_Renderer_Table extends Tracker_Report_Renderer implements T
                             $html .= '<td class="tracker_formelement_read_and_edit_edition_section">';
                             $html .= $renderer->renderToString(
                                 'artifactlink-type-selector',
-                                new TypeSelectorPresenter($types_presenter, $name, '')
+                                new TypeSelectorPresenter(
+                                    $types_presenter,
+                                    $name,
+                                    '',
+                                    ! $artifact_link_can_be_modified,
+                                )
                             );
                             $html .= '</td>';
                         }
@@ -1630,10 +1656,8 @@ class Tracker_Report_Renderer_Table extends Tracker_Report_Renderer implements T
 
         $where = " WHERE c.id IN (" . $changeset_ids . ") ";
         if ($aggregates) {
-            $group_by = '';
             $ordering = false;
         } else {
-            $group_by = ' GROUP BY id ';
             $ordering = true;
         }
 
@@ -1642,7 +1666,7 @@ class Tracker_Report_Renderer_Table extends Tracker_Report_Renderer implements T
         $already_seen       = [];
 
         foreach ($columns as $column) {
-            if (! $column['field']->isUsed()) {
+            if (! $column['field']->isUsed() || $column['field']->isMultiple()) {
                 continue;
             }
 
@@ -1694,7 +1718,7 @@ class Tracker_Report_Renderer_Table extends Tracker_Report_Renderer implements T
             }
 
             //build the query
-            $sql = $inner_select . $inner_from . $where . $group_by;
+            $sql = $inner_select . $inner_from . $where;
 
             //add it to the pool
             $queries[] = $sql;
@@ -1740,7 +1764,7 @@ class Tracker_Report_Renderer_Table extends Tracker_Report_Renderer implements T
         }
 
         if (empty($queries)) {
-            $queries[] = $select . $from . $where . $group_by;
+            $queries[] = $select . $from . $where;
         }
 
         return $queries;
@@ -2120,7 +2144,7 @@ class Tracker_Report_Renderer_Table extends Tracker_Report_Renderer implements T
     public function exportToXml(SimpleXMLElement $root, array $xmlMapping)
     {
         parent::exportToXml($root, $xmlMapping);
-        $root->addAttribute('chunksz', $this->chunksz);
+        $root->addAttribute('chunksz', $this->chunksz ?? '');
         if ($this->multisort) {
             $root->addAttribute('multisort', $this->multisort);
         }

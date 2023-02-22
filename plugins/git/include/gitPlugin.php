@@ -83,7 +83,7 @@ use Tuleap\Git\Hook\Asynchronous\DefaultBranchPushProcessorBuilder;
 use Tuleap\Git\Hook\Asynchronous\GitRepositoryRetriever;
 use Tuleap\Git\Hook\PreReceive\PreReceiveAnalyzeCommand;
 use Tuleap\Git\Hook\PreReceive\PreReceiveAnalyzeAction;
-use Tuleap\Git\Hook\PreReceive\PreReceiveAnalyzeFFI;
+use Tuleap\WebAssembly\FFIWASMCaller;
 use Tuleap\Git\HTTP\HTTPAccessControl;
 use Tuleap\Git\LatestHeartbeatsCollector;
 use Tuleap\Git\Notifications\NotificationsForProjectMemberCleaner;
@@ -489,6 +489,7 @@ class GitPlugin extends Plugin implements PluginWithConfigKeys, PluginWithServic
     public function getConfigKeys(ConfigClassProvider $event): void
     {
         $event->addConfigClass(PreReceiveAnalyzeCommand::class);
+        $event->addConfigClass(GitoliteAccessURLGenerator::class);
     }
 
     public function cssFile($params)
@@ -2886,7 +2887,7 @@ class GitPlugin extends Plugin implements PluginWithConfigKeys, PluginWithServic
                     return new PreReceiveAnalyzeCommand(
                         new PreReceiveAnalyzeAction(
                             $this->getRepositoryFactory(),
-                            new PreReceiveAnalyzeFFI()
+                            new FFIWASMCaller()
                         )
                     );
                 }

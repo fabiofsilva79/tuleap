@@ -19,7 +19,7 @@
 
 import { LinkedArtifactIdentifierStub } from "../../../../../tests/stubs/LinkedArtifactIdentifierStub";
 import type { HostElement } from "./LinkField";
-import { getLinkedArtifactTemplate, getActionButton } from "./LinkedArtifactTemplate";
+import { getActionButton, getLinkedArtifactTemplate } from "./LinkedArtifactTemplate";
 import { LinkedArtifactStub } from "../../../../../tests/stubs/LinkedArtifactStub";
 import { LinkedArtifactPresenter } from "./LinkedArtifactPresenter";
 import { setCatalog } from "../../../../gettext-catalog";
@@ -34,14 +34,12 @@ import { CurrentArtifactIdentifierStub } from "../../../../../tests/stubs/Curren
 import type { VerifyLinkIsMarkedForRemoval } from "../../../../domain/fields/link-field/VerifyLinkIsMarkedForRemoval";
 import type { LinkedArtifact } from "../../../../domain/fields/link-field/LinkedArtifact";
 import { LinkTypeStub } from "../../../../../tests/stubs/LinkTypeStub";
-import { NotifyFaultStub } from "../../../../../tests/stubs/NotifyFaultStub";
 import { ArtifactCrossReferenceStub } from "../../../../../tests/stubs/ArtifactCrossReferenceStub";
-import { ArtifactLinkSelectorAutoCompleter } from "./ArtifactLinkSelectorAutoCompleter";
+import { ArtifactLinkSelectorAutoCompleter } from "./dropdown/ArtifactLinkSelectorAutoCompleter";
 import { RetrieveMatchingArtifactStub } from "../../../../../tests/stubs/RetrieveMatchingArtifactStub";
 import { LinkableArtifactStub } from "../../../../../tests/stubs/LinkableArtifactStub";
 import { AddNewLinkStub } from "../../../../../tests/stubs/AddNewLinkStub";
 import { RetrieveNewLinksStub } from "../../../../../tests/stubs/RetrieveNewLinksStub";
-import { ClearFaultNotificationStub } from "../../../../../tests/stubs/ClearFaultNotificationStub";
 import { DeleteNewLinkStub } from "../../../../../tests/stubs/DeleteNewLinkStub";
 import { VerifyHasParentLinkStub } from "../../../../../tests/stubs/VerifyHasParentLinkStub";
 import { RetrievePossibleParentsStub } from "../../../../../tests/stubs/RetrievePossibleParentsStub";
@@ -50,6 +48,12 @@ import { VerifyIsAlreadyLinkedStub } from "../../../../../tests/stubs/VerifyIsAl
 import { ControlLinkedArtifactsPopoversStub } from "../../../../../tests/stubs/ControlLinkedArtifactsPopoversStub";
 import { AllowedLinksTypesCollection } from "./AllowedLinksTypesCollection";
 import { VerifyIsTrackerInAHierarchyStub } from "../../../../../tests/stubs/VerifyIsTrackerInAHierarchyStub";
+import { UserIdentifierStub } from "../../../../../tests/stubs/UserIdentifierStub";
+import { RetrieveUserHistoryStub } from "../../../../../tests/stubs/RetrieveUserHistoryStub";
+import { okAsync } from "neverthrow";
+import { SearchArtifactsStub } from "../../../../../tests/stubs/SearchArtifactsStub";
+import { selectOrThrow } from "@tuleap/dom";
+import { DispatchEventsStub } from "../../../../../tests/stubs/DispatchEventsStub";
 
 describe(`LinkedArtifactTemplate`, () => {
     let target: ShadowRoot;
@@ -76,7 +80,7 @@ describe(`LinkedArtifactTemplate`, () => {
                     title: "A parent",
                     xref: ArtifactCrossReferenceStub.withRefAndColor("art #123", "red-wine"),
                     uri: "/url/to/artifact/123",
-                    status: "Open",
+                    status: { value: "Open", color: "flamingo-pink" },
                     is_open: true,
                     link_type: LinkTypeStub.buildParentLinkType(),
                 }),
@@ -91,7 +95,7 @@ describe(`LinkedArtifactTemplate`, () => {
                     title: "A child",
                     xref: ArtifactCrossReferenceStub.withRefAndColor("art #234", "surf-green"),
                     uri: "/url/to/artifact/234",
-                    status: "Closed",
+                    status: { value: "Open", color: "flamingo-pink" },
                     is_open: false,
                     link_type: LinkTypeStub.buildUntyped(),
                 }),
@@ -101,36 +105,58 @@ describe(`LinkedArtifactTemplate`, () => {
     ])(`will render a linked artifact`, (_type_of_presenter, presenter) => {
         render(presenter);
 
-        const row = target.querySelector("[data-test=artifact-row]");
-        const link = target.querySelector("[data-test=artifact-link]");
-        const xref = target.querySelector("[data-test=artifact-xref]");
-        const title = target.querySelector("[data-test=artifact-title]");
-        const status = target.querySelector("[data-test=artifact-status]");
-        const type = target.querySelector("[data-test=artifact-link-type]");
+        const row = selectOrThrow(target, "[data-test=artifact-row]");
+        const link = selectOrThrow(target, "[data-test=artifact-link]", HTMLAnchorElement);
+        const xref = selectOrThrow(target, "[data-test=artifact-xref]");
+        const title = selectOrThrow(target, "[data-test=artifact-title]");
+        const status = selectOrThrow(target, "[data-test=artifact-status]");
+        const type = selectOrThrow(target, "[data-test=artifact-link-type]");
         const expected_type =
             presenter.link_type.shortname === "" ? "Linked to" : presenter.link_type.label;
-
-        if (
-            !(row instanceof HTMLElement) ||
-            !(link instanceof HTMLAnchorElement) ||
-            !(xref instanceof HTMLElement) ||
-            !(title instanceof HTMLElement) ||
-            !(status instanceof HTMLElement) ||
-            !(type instanceof HTMLElement)
-        ) {
-            throw new Error("An expected element has not been found in template");
-        }
 
         expect(link.href).toBe(presenter.uri);
         expect(xref.classList.contains(`tlp-swatch-${presenter.xref.color}`)).toBe(true);
         expect(xref.textContent?.trim()).toBe(presenter.xref.ref);
         expect(title.textContent?.trim()).toBe(presenter.title);
-        expect(status.textContent?.trim()).toBe(presenter.status);
+        expect(status.textContent?.trim()).toBe(presenter.status?.value);
         expect(type.textContent?.trim()).toBe(expected_type);
 
         expect(row.classList.contains("link-field-table-row-muted")).toBe(!presenter.is_open);
-        expect(status.classList.contains("tlp-badge-secondary")).toBe(!presenter.is_open);
-        expect(status.classList.contains("tlp-badge-success")).toBe(presenter.is_open);
+        expect(status.classList.contains("tlp-badge-secondary")).toBe(false);
+        expect(status.classList.contains("tlp-badge-flamingo-pink")).toBe(true);
+    });
+
+    it(`will render a linked artifact with no color`, () => {
+        const presenter = LinkedArtifactPresenter.fromLinkedArtifact(
+            LinkedArtifactStub.withDefaults({
+                identifier: LinkedArtifactIdentifierStub.withId(123),
+                title: "A parent",
+                xref: ArtifactCrossReferenceStub.withRefAndColor("art #123", "red-wine"),
+                uri: "/url/to/artifact/123",
+                status: { value: "Open", color: null },
+                is_open: true,
+                link_type: LinkTypeStub.buildParentLinkType(),
+            }),
+            false
+        );
+        render(presenter);
+
+        const row = selectOrThrow(target, "[data-test=artifact-row]");
+        const link = selectOrThrow(target, "[data-test=artifact-link]", HTMLAnchorElement);
+        const xref = selectOrThrow(target, "[data-test=artifact-xref]");
+        const title = selectOrThrow(target, "[data-test=artifact-title]");
+        const status = selectOrThrow(target, "[data-test=artifact-status]");
+        const type = selectOrThrow(target, "[data-test=artifact-link-type]");
+
+        expect(link.href).toBe(presenter.uri);
+        expect(xref.classList.contains(`tlp-swatch-${presenter.xref.color}`)).toBe(true);
+        expect(xref.textContent?.trim()).toBe(presenter.xref.ref);
+        expect(title.textContent?.trim()).toBe(presenter.title);
+        expect(status.textContent?.trim()).toBe(presenter.status?.value);
+        expect(type.textContent?.trim()).toBe(presenter.link_type.label);
+
+        expect(row.classList.contains("link-field-table-row-muted")).toBe(!presenter.is_open);
+        expect(status.classList.contains("tlp-badge-secondary")).toBe(true);
     });
 
     describe(`getActionButton`, () => {
@@ -143,12 +169,10 @@ describe(`LinkedArtifactTemplate`, () => {
 
         const getHost = (linked_artifact: LinkedArtifact): HostElement => {
             const current_artifact_identifier = CurrentArtifactIdentifierStub.withId(72);
-            const fault_notifier = NotifyFaultStub.withCount();
             const current_tracker_identifier = CurrentTrackerIdentifierStub.withId(75);
-            const notification_clearer = ClearFaultNotificationStub.withCount();
             const parents_retriever = RetrievePossibleParentsStub.withoutParents();
             const link_verifier = VerifyIsAlreadyLinkedStub.withNoArtifactAlreadyLinked();
-            const is_search_feature_flag_enabled = true;
+            const event_dispatcher = DispatchEventsStub.buildNoOp();
 
             const controller = LinkFieldController(
                 RetrieveAllLinkedArtifactsStub.withoutLink(),
@@ -156,19 +180,18 @@ describe(`LinkedArtifactTemplate`, () => {
                 AddLinkMarkedForRemovalStub.withCount(),
                 DeleteLinkMarkedForRemovalStub.withCount(),
                 marked_for_removal_verifier,
-                fault_notifier,
-                notification_clearer,
                 ArtifactLinkSelectorAutoCompleter(
                     RetrieveMatchingArtifactStub.withMatchingArtifact(
-                        LinkableArtifactStub.withDefaults()
+                        okAsync(LinkableArtifactStub.withDefaults())
                     ),
-                    fault_notifier,
-                    notification_clearer,
                     parents_retriever,
                     link_verifier,
+                    RetrieveUserHistoryStub.withoutUserHistory(),
+                    SearchArtifactsStub.withoutResults(),
+                    event_dispatcher,
                     current_artifact_identifier,
                     current_tracker_identifier,
-                    is_search_feature_flag_enabled
+                    UserIdentifierStub.fromUserId(101)
                 ),
                 AddNewLinkStub.withCount(),
                 DeleteNewLinkStub.withCount(),
@@ -176,6 +199,9 @@ describe(`LinkedArtifactTemplate`, () => {
                 VerifyHasParentLinkStub.withNoParentLink(),
                 parents_retriever,
                 link_verifier,
+                VerifyIsTrackerInAHierarchyStub.withNoHierarchy(),
+                event_dispatcher,
+                ControlLinkedArtifactsPopoversStub.build(),
                 {
                     field_id: 457,
                     label: "Artifact link",
@@ -185,9 +211,7 @@ describe(`LinkedArtifactTemplate`, () => {
                 current_artifact_identifier,
                 current_tracker_identifier,
                 ArtifactCrossReferenceStub.withRef("story #72"),
-                ControlLinkedArtifactsPopoversStub.build(),
-                AllowedLinksTypesCollection.buildFromTypesRepresentations([]),
-                VerifyIsTrackerInAHierarchyStub.withNoHierarchy()
+                AllowedLinksTypesCollection.buildFromTypesRepresentations([])
             );
 
             return {

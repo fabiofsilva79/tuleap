@@ -32,8 +32,6 @@ import MainController from "./app-controller.js";
 import FileDiffComponent from "./file-diff/file-diff-component.js";
 import UnidiffComponent from "./file-diff/diff-modes/unidiff-component.js";
 import SideBySideDiffComponent from "./file-diff/diff-modes/side-by-side-diff-component.js";
-import OverviewWrapper from "./overview/overview-wrapper-component.js";
-import VueOverComponent from "./overview/vue-over/vue-over-component.js";
 
 import DashboardDirective from "./dashboard/dashboard-directive.js";
 import PullRequestSummaryDirective from "./dashboard/pull-request-summary/pull-request-summary-directive.js";
@@ -66,7 +64,6 @@ import TimelineService from "./overview/timeline/timeline-service.js";
 import CommitsRestService from "./commits/commits-rest-service.js";
 import PullRequestRestService from "./pull-request/pull-request-rest-service.js";
 import PullRequestService from "./pull-request/pull-request-service.js";
-import CodeMirrorHelperService from "./file-diff/codemirror-helper-service.js";
 
 import MainConfig from "./app-config.js";
 import TuleapResize from "./resize/resize.js";
@@ -80,7 +77,7 @@ import PullRequestConfig from "./pull-request/pull-request-config.js";
 
 import angular_custom_elements_module from "angular-custom-elements";
 import "./comments/PullRequestComment.ts";
-import "./file-diff/FileDiffPlaceholder.ts";
+import "./file-diff/widgets/placeholders/FileDiffPlaceholder.ts";
 import "./comments/new-comment-form/NewInlineCommentForm.ts";
 
 export default angular
@@ -98,8 +95,6 @@ export default angular
     .component("fileDiff", FileDiffComponent)
     .component("fileUnidiff", UnidiffComponent)
     .component("sideBySideDiff", SideBySideDiffComponent)
-    .component("overviewWrapper", OverviewWrapper)
-    .component("vueOverComponent", VueOverComponent)
 
     .directive("dashboard", DashboardDirective)
     .directive("pullRequestSummary", PullRequestSummaryDirective)
@@ -132,7 +127,6 @@ export default angular
     .service("CommitsRestService", CommitsRestService)
     .service("PullRequestRestService", PullRequestRestService)
     .service("PullRequestService", PullRequestService)
-    .service("CodeMirrorHelperService", CodeMirrorHelperService)
 
     .config(MainConfig)
     .config(DashboardConfig)

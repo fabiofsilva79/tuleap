@@ -37,7 +37,13 @@ $link-table-cell-background: transparent;
 
     > .link-field-table-body {
         > .link-field-table-row {
-            > :is(.link-field-table-cell-type, .link-field-table-cell-xref, .link-field-table-cell-status, .link-field-table-cell-action, .link-field-table-cell-no-links) {
+            > :is(
+                    .link-field-table-cell-type,
+                    .link-field-table-cell-xref,
+                    .link-field-table-cell-status,
+                    .link-field-table-cell-action,
+                    .link-field-table-cell-no-links
+                ) {
                 padding: $link-table-cell-padding;
                 border-bottom: $link-table-cell-border-bottom;
                 border-bottom-right-radius: 0;
@@ -112,10 +118,6 @@ $link-table-cell-background: transparent;
     }
 }
 
-.link-field-table-row-new {
-    background: var(--tlp-success-color-lighter-90);
-}
-
 .link-field-link-to-remove {
     text-decoration: line-through;
 }
@@ -162,21 +164,32 @@ $link-table-cell-background: transparent;
 
 .link-field-item {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     width: 100%;
+}
 
-    > .link-field-item-title {
-        flex: 0 1 auto;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-    }
+.link-field-item-title {
+    flex: 0 1 auto;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
 
-    > .link-field-disabled-item-already-linked-info {
-        flex: 0 1 auto;
-        margin: 0 0 0 calc(var(--tlp-small-spacing) / 2);
-        white-space: nowrap;
-    }
+.link-field-disabled-item-already-linked-info {
+    flex: 0 1 auto;
+    margin: 0 0 0 calc(var(--tlp-small-spacing) / 2);
+    white-space: nowrap;
+}
+
+.link-field-item-status {
+    margin: 0 0 0 auto;
+}
+
+.link-field-item-project {
+    flex: 1 1 100%;
+    margin: 2px 0 0;
+    font-size: 0.65rem;
 }
 
 .link-field-artifact-can-have-only-one-parent-note {
